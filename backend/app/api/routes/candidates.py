@@ -10,14 +10,16 @@ from app.core.config import settings
 from app.db.models import Candidate, CandidateJobMatch, CandidateResume, CandidateSkill, Job
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user, get_primary_membership, require_roles
-from app.schemas import CandidateCreate, CandidateRead, MatchResultRead
+from app.schemas import CandidateCreate, CandidateRead, CandidateReviewWorkspaceRead, MatchResultRead
 from app.services.events import EventPublisher, log_audit
 from app.services.parsers import extract_text_from_upload, parse_resume_text
+from app.services.review_workspace import CandidateReviewWorkspaceService
 from app.services.scoring import HiringIntelligenceService
 
 router = APIRouter(prefix="/candidates", tags=["candidates"])
 events = EventPublisher()
 ai = HiringIntelligenceService()
+review_workspace = CandidateReviewWorkspaceService()
 
 
 @router.post("", response_model=CandidateRead)
@@ -137,6 +139,19 @@ def get_candidate(candidate_id: str, current_user=Depends(get_current_user), db:
     return CandidateRead.model_validate(candidate)
 
 
+@router.get("/{candidate_id}/review-workspace/{job_id}", response_model=CandidateReviewWorkspaceRead)
+def get_candidate_review_workspace(
+    candidate_id: str,
+    job_id: str,
+    current_user=Depends(require_roles("admin", "recruiter", "hiring_manager")),
+    db: Session = Depends(get_db),
+) -> CandidateReviewWorkspaceRead:
+    workspace = review_workspace.build(db, candidate_id=candidate_id, job_id=job_id)
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Candidate or job not found")
+    return workspace
+
+
 @router.post("/{candidate_id}/match-job/{job_id}", response_model=MatchResultRead)
 def match_candidate_to_job(
     candidate_id: str,
@@ -172,4 +187,3 @@ def match_candidate_to_job(
     db.commit()
     db.refresh(match)
     return MatchResultRead.model_validate(match)
-

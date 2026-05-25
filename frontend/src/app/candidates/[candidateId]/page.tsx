@@ -11,6 +11,33 @@ import { api } from "@/lib/api";
 import type { InterviewInviteResponse, MatchResult } from "@/lib/types";
 import { formatScore, titleCase } from "@/lib/utils";
 
+const decisionOptions = [
+  { value: "human_review_required", label: "Mark for human review" },
+  { value: "shortlisted", label: "Shortlist" },
+  { value: "moved_to_next_round", label: "Move to next round" },
+  { value: "rejected", label: "Reject" },
+  { value: "hired", label: "Mark as hired" },
+  { value: "archived", label: "Archive" },
+];
+
+type BadgeTone = "success" | "warning" | "danger" | "brand" | "neutral";
+
+function statusTone(status?: string): BadgeTone {
+  if (!status) {
+    return "neutral";
+  }
+  if (status.includes("reject") || status.includes("archived")) {
+    return "danger";
+  }
+  if (status.includes("review")) {
+    return "warning";
+  }
+  if (status.includes("shortlist") || status.includes("hired") || status.includes("next_round")) {
+    return "success";
+  }
+  return "brand";
+}
+
 export default function CandidateDetailPage() {
   const auth = useAuth();
   const params = useParams<{ candidateId: string }>();
@@ -23,6 +50,9 @@ export default function CandidateDetailPage() {
   const [meetingJoinUrl, setMeetingJoinUrl] = useState("");
   const [matchResult, setMatchResult] = useState<MatchResult | null>(null);
   const [inviteResult, setInviteResult] = useState<InterviewInviteResponse | null>(null);
+  const [decision, setDecision] = useState("human_review_required");
+  const [decisionNotes, setDecisionNotes] = useState("");
+  const [overrideRecommendation, setOverrideRecommendation] = useState(false);
 
   const candidate = useQuery({
     queryKey: ["candidate", auth.token, candidateId],
@@ -39,10 +69,18 @@ export default function CandidateDetailPage() {
     queryFn: () => api.getGoogleIntegrationStatus(auth.token as string),
     enabled: Boolean(auth.token),
   });
+  const reviewWorkspace = useQuery({
+    queryKey: ["candidate-review-workspace", auth.token, candidateId, selectedJobId],
+    queryFn: () => api.getCandidateReviewWorkspace(auth.token as string, candidateId, selectedJobId),
+    enabled: Boolean(auth.token && candidateId && selectedJobId),
+  });
 
   const matchMutation = useMutation({
     mutationFn: () => api.matchCandidate(auth.token as string, candidateId, selectedJobId),
-    onSuccess: (result) => setMatchResult(result),
+    onSuccess: async (result) => {
+      setMatchResult(result);
+      await Promise.all([candidate.refetch(), reviewWorkspace.refetch()]);
+    },
   });
 
   const inviteMutation = useMutation({
@@ -57,7 +95,24 @@ export default function CandidateDetailPage() {
         scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
         meeting_join_url: meetingJoinUrl || null,
       }),
-    onSuccess: (interview) => setInviteResult(interview),
+    onSuccess: async (interview) => {
+      setInviteResult(interview);
+      await reviewWorkspace.refetch();
+    },
+  });
+
+  const recruiterDecisionMutation = useMutation({
+    mutationFn: () =>
+      api.submitRecruiterDecision(auth.token as string, reviewWorkspace.data?.latest_interview?.id as string, {
+        decision,
+        notes: decisionNotes || null,
+        override_ai_recommendation: overrideRecommendation,
+      }),
+    onSuccess: async () => {
+      setDecisionNotes("");
+      setOverrideRecommendation(false);
+      await Promise.all([candidate.refetch(), reviewWorkspace.refetch()]);
+    },
   });
 
   const inviteDisabled =
@@ -71,11 +126,13 @@ export default function CandidateDetailPage() {
       !googleStatus.data?.connected &&
       !meetingJoinUrl.trim()) ||
     (interviewMode === "video" && scheduleType === "scheduled" && !scheduledAt);
+  const reviewDecisionDisabled =
+    recruiterDecisionMutation.isPending || !reviewWorkspace.data?.can_record_decision || !reviewWorkspace.data?.latest_interview?.id;
 
   return (
     <AppShell
       title={candidate.data?.name || "Candidate detail"}
-      subtitle="Inspect the parsed resume profile, run role matching, and generate an AI interview invitation with a shareable candidate link."
+      subtitle="Inspect the parsed resume profile, run role matching, launch an AI interview, and record the final recruiter-controlled decision with auditability."
     >
       <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
         <Card>
@@ -86,7 +143,7 @@ export default function CandidateDetailPage() {
               </h3>
               <p className="mt-2 text-sm text-muted">{candidate.data?.email}</p>
             </div>
-            <Badge tone={candidate.data?.status?.includes("review") ? "warning" : "brand"}>
+            <Badge tone={statusTone(candidate.data?.status)}>
               {titleCase(candidate.data?.status || "applied")}
             </Badge>
           </div>
@@ -348,6 +405,223 @@ export default function CandidateDetailPage() {
           </div>
         </Card>
       </div>
+
+      {selectedJobId ? (
+        <div className="mt-4 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+          <Card>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.22em] text-brand">
+                  Recruiter decision workspace
+                </p>
+                <h3 className="mt-3 font-display text-3xl font-semibold text-text">
+                  {reviewWorkspace.data?.job_title || "Loading role context"}
+                </h3>
+                <p className="mt-2 max-w-2xl text-sm leading-7 text-muted">
+                  {reviewWorkspace.data?.decision_support_note ||
+                    "Keep the recruiter in control by documenting the final decision and any AI override."}
+                </p>
+              </div>
+              {reviewWorkspace.data?.latest_decision ? (
+                <Badge tone={statusTone(reviewWorkspace.data.latest_decision.decision)}>
+                  Final call: {titleCase(reviewWorkspace.data.latest_decision.decision)}
+                </Badge>
+              ) : (
+                <Badge tone="warning">Awaiting recruiter decision</Badge>
+              )}
+            </div>
+
+            <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-[22px] bg-white/75 px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-soft">Resume match</p>
+                <p className="mt-2 font-display text-3xl font-semibold text-text">
+                  {reviewWorkspace.data?.latest_match ? `${formatScore(reviewWorkspace.data.latest_match.overall_score)}%` : "Pending"}
+                </p>
+                <p className="mt-2 text-sm text-muted">
+                  {reviewWorkspace.data?.latest_match
+                    ? titleCase(reviewWorkspace.data.latest_match.match_recommendation)
+                    : "Run the resume match to create AI evidence."}
+                </p>
+              </div>
+              <div className="rounded-[22px] bg-white/75 px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-soft">Interview status</p>
+                <p className="mt-2 font-display text-3xl font-semibold text-text">
+                  {reviewWorkspace.data?.latest_interview ? titleCase(reviewWorkspace.data.latest_interview.status) : "Not invited"}
+                </p>
+                <p className="mt-2 text-sm text-muted">
+                  {reviewWorkspace.data?.latest_interview
+                    ? `${titleCase(reviewWorkspace.data.latest_interview.mode)} mode`
+                    : "Create an invite to unlock decision logging."}
+                </p>
+              </div>
+              <div className="rounded-[22px] bg-white/75 px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-soft">Human review</p>
+                <p className="mt-2 font-display text-3xl font-semibold text-text">
+                  {reviewWorkspace.data?.latest_report?.human_review_required ||
+                  reviewWorkspace.data?.latest_match?.human_review_required
+                    ? "Required"
+                    : "Ready"}
+                </p>
+                <p className="mt-2 text-sm text-muted">
+                  {reviewWorkspace.data?.latest_report?.recommended_next_step ||
+                    "AI evidence should still be reviewed by a recruiter before moving the candidate."}
+                </p>
+              </div>
+              <div className="rounded-[22px] bg-white/75 px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-soft">Latest override</p>
+                <p className="mt-2 font-display text-3xl font-semibold text-text">
+                  {reviewWorkspace.data?.latest_decision?.override_ai_recommendation ? "Yes" : "No"}
+                </p>
+                <p className="mt-2 text-sm text-muted">
+                  {reviewWorkspace.data?.latest_decision
+                    ? `Logged by ${reviewWorkspace.data.latest_decision.recruiter_name}`
+                    : "No recruiter override recorded yet."}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_0.9fr]">
+              <div className="rounded-[24px] border border-border bg-white/70 px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-semibold text-text">Decision capture</p>
+                  {reviewWorkspace.data?.latest_match ? (
+                    <Badge tone={reviewWorkspace.data.latest_match.human_review_required ? "warning" : "success"}>
+                      AI says {titleCase(reviewWorkspace.data.latest_match.match_recommendation)}
+                    </Badge>
+                  ) : null}
+                </div>
+                {!reviewWorkspace.data?.can_record_decision ? (
+                  <p className="mt-3 text-sm leading-7 text-muted">
+                    Invite the candidate to an interview first so HireOS can attach the recruiter decision to a specific review workflow.
+                  </p>
+                ) : (
+                  <>
+                    <label className="mt-4 block">
+                      <span className="text-sm font-medium text-muted">Final recruiter decision</span>
+                      <select
+                        className="mt-2 w-full rounded-2xl border border-border bg-white/80 px-4 py-3 outline-none"
+                        value={decision}
+                        onChange={(event) => setDecision(event.target.value)}
+                      >
+                        {decisionOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="mt-4 block">
+                      <span className="text-sm font-medium text-muted">Recruiter notes</span>
+                      <textarea
+                        className="mt-2 min-h-[130px] w-full rounded-2xl border border-border bg-white/80 px-4 py-3 outline-none"
+                        placeholder="Capture why you are advancing, holding, or rejecting this candidate."
+                        value={decisionNotes}
+                        onChange={(event) => setDecisionNotes(event.target.value)}
+                      />
+                    </label>
+                    <label className="mt-4 flex items-start gap-3 rounded-[20px] border border-border bg-surface-elevated px-4 py-3 text-sm text-muted">
+                      <input
+                        type="checkbox"
+                        className="mt-1 h-4 w-4"
+                        checked={overrideRecommendation}
+                        onChange={(event) => setOverrideRecommendation(event.target.checked)}
+                      />
+                      <span>
+                        I am overriding the AI recommendation and want the audit trail to explicitly capture that this was a human judgment call.
+                      </span>
+                    </label>
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        disabled={reviewDecisionDisabled}
+                        onClick={() => recruiterDecisionMutation.mutate()}
+                        className="rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
+                      >
+                        Record recruiter decision
+                      </button>
+                      {reviewWorkspace.data?.latest_report ? (
+                        <a
+                          href={`/reports/${reviewWorkspace.data.latest_report.id}`}
+                          className="rounded-full border border-border bg-white/70 px-5 py-3 text-sm font-semibold text-text"
+                        >
+                          Open report
+                        </a>
+                      ) : null}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="rounded-[24px] border border-border bg-white/70 px-4 py-4">
+                <p className="font-semibold text-text">Decision history</p>
+                <div className="mt-4 space-y-3">
+                  {reviewWorkspace.data?.decision_history?.length ? (
+                    reviewWorkspace.data.decision_history.map((entry) => (
+                      <div
+                        key={entry.id}
+                        className="rounded-[20px] border border-border bg-surface-elevated px-4 py-4"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <Badge tone={statusTone(entry.decision)}>{titleCase(entry.decision)}</Badge>
+                          <p className="text-xs uppercase tracking-[0.18em] text-muted-soft">
+                            {new Date(entry.created_at).toLocaleString()}
+                          </p>
+                        </div>
+                        <p className="mt-3 text-sm font-medium text-text">{entry.recruiter_name}</p>
+                        <p className="mt-2 text-sm leading-7 text-muted">
+                          {entry.notes || "No recruiter note added for this decision."}
+                        </p>
+                        {entry.override_ai_recommendation ? (
+                          <p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-brand">
+                            AI override captured
+                          </p>
+                        ) : null}
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm leading-7 text-muted">
+                      No recruiter decision has been recorded yet. Once you log one, it will appear here with notes and override context.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          <Card>
+            <p className="text-sm font-semibold uppercase tracking-[0.22em] text-brand">
+              Audit timeline
+            </p>
+            <p className="mt-3 text-sm leading-7 text-muted">
+              Every meaningful hiring action stays visible here so recruiters, hiring managers, and admins can understand what happened before a final decision.
+            </p>
+            <div className="mt-6 space-y-3">
+              {reviewWorkspace.data?.audit_timeline?.length ? (
+                reviewWorkspace.data.audit_timeline.map((entry, index) => (
+                  <div key={`${entry.source}-${entry.action}-${index}`} className="relative rounded-[22px] border border-border bg-white/70 px-4 py-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <Badge tone={entry.source === "audit" ? "brand" : entry.source === "report" ? "warning" : "neutral"}>
+                        {titleCase(entry.source)}
+                      </Badge>
+                      <p className="text-xs uppercase tracking-[0.18em] text-muted-soft">
+                        {new Date(entry.timestamp).toLocaleString()}
+                      </p>
+                    </div>
+                    <p className="mt-3 text-sm font-semibold text-text">{entry.summary}</p>
+                    <p className="mt-2 text-xs uppercase tracking-[0.18em] text-muted-soft">
+                      {entry.actor_label} · {titleCase(entry.action)}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm leading-7 text-muted">
+                  Select a job, then run a match or create an interview to populate the candidate audit timeline.
+                </p>
+              )}
+            </div>
+          </Card>
+        </div>
+      ) : null}
     </AppShell>
   );
 }

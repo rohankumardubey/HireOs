@@ -29,7 +29,7 @@ export default function LoginPage() {
   const mutation = useMutation({
     mutationFn: api.login,
     onSuccess: (data) => {
-      persistSession(data.user);
+      persistSession(data.user, data.access_token);
       startTransition(() => router.push("/dashboard"));
     },
   });
