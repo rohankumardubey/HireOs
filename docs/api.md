@@ -34,12 +34,27 @@ Base path: `/api/v1`
 ## Interviews
 
 - `POST /interviews/invite`
+- `POST /interviews/{interview_id}/send-email`
+- `GET /interviews/{interview_id}/email-deliveries`
+- `GET /interviews/reminders/preview`
+- `POST /interviews/reminders/run`
 - `POST /interviews/{interview_id}/start`
 - `GET /interviews/{interview_id}/next-question`
 - `POST /interviews/{interview_id}/answers`
 - `POST /interviews/{interview_id}/complete`
 - `GET /interviews/{interview_id}/report`
 - `POST /interviews/{interview_id}/decision`
+- `GET /interviews/{interview_id}/ats-exports`
+- `POST /interviews/{interview_id}/export-ats`
+
+## Integrations
+
+- `GET /integrations/google/status`
+- `POST /integrations/google/connect`
+- `DELETE /integrations/google`
+- `GET /integrations/ats-webhook/status`
+- `PATCH /integrations/ats-webhook`
+- `POST /integrations/ats-webhook/test`
 
 ## Reports
 
@@ -58,4 +73,3 @@ Base path: `/api/v1`
 
 - `GET /health`
 - `GET /metrics`
-

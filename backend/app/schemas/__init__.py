@@ -219,6 +219,37 @@ class InterviewEmailSendResponse(BaseModel):
     delivery: NotificationDeliveryRead
 
 
+class WebhookDeliveryRead(ORMModel):
+    id: str
+    company_id: str
+    interview_id: str | None = None
+    candidate_id: str | None = None
+    job_id: str | None = None
+    recruiter_id: str | None = None
+    integration_name: str
+    event_name: str
+    target_url: str
+    provider: str
+    status: str
+    response_status_code: int | None = None
+    error_message: str | None = None
+    request_body: str
+    response_body: str | None = None
+    metadata_json: dict = {}
+    created_at: datetime
+
+
+class ATSWebhookExportResponse(BaseModel):
+    status: str
+    delivery: WebhookDeliveryRead
+
+
+class ATSWebhookTriggerResult(BaseModel):
+    status: str
+    delivery: WebhookDeliveryRead | None = None
+    reason: str | None = None
+
+
 class ReminderCandidatePreview(BaseModel):
     interview_id: str
     candidate_id: str
@@ -313,6 +344,11 @@ class DecisionRequest(BaseModel):
     decision: str
     notes: str | None = None
     override_ai_recommendation: bool = False
+
+
+class RecruiterDecisionResponse(BaseModel):
+    status: str
+    ats_export: ATSWebhookTriggerResult
 
 
 class RecruiterDecisionRead(BaseModel):
@@ -426,6 +462,25 @@ class GoogleIntegrationStatus(BaseModel):
 
 class GoogleConnectResponse(BaseModel):
     authorization_url: str
+
+
+class ATSWebhookStatus(BaseModel):
+    configured: bool
+    enabled: bool
+    provider_label: str
+    endpoint_url: str | None = None
+    export_stages: list[str] = Field(default_factory=list)
+    has_auth_token: bool = False
+    has_signing_secret: bool = False
+
+
+class ATSWebhookUpdateRequest(BaseModel):
+    enabled: bool = False
+    provider_label: str = "ATS webhook"
+    endpoint_url: AnyUrl | None = None
+    auth_token: str | None = None
+    signing_secret: str | None = None
+    export_stages: list[str] = Field(default_factory=lambda: ["shortlisted", "moved_to_next_round", "hired"])
 
 
 class CopilotQueryRequest(BaseModel):

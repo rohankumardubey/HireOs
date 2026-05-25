@@ -54,7 +54,6 @@ export default function CandidateDetailPage() {
   const [decision, setDecision] = useState("human_review_required");
   const [decisionNotes, setDecisionNotes] = useState("");
   const [overrideRecommendation, setOverrideRecommendation] = useState(false);
-  const activeInterviewId = inviteResult?.id || null;
 
   const candidate = useQuery({
     queryKey: ["candidate", auth.token, candidateId],
@@ -76,9 +75,15 @@ export default function CandidateDetailPage() {
     queryFn: () => api.getCandidateReviewWorkspace(auth.token as string, candidateId, selectedJobId),
     enabled: Boolean(auth.token && candidateId && selectedJobId),
   });
+  const activeInterviewId = inviteResult?.id || reviewWorkspace.data?.latest_interview?.id || null;
   const emailDeliveries = useQuery({
     queryKey: ["interview-email-deliveries", auth.token, activeInterviewId],
     queryFn: () => api.getInterviewEmailDeliveries(auth.token as string, activeInterviewId as string),
+    enabled: Boolean(auth.token && activeInterviewId),
+  });
+  const atsExports = useQuery({
+    queryKey: ["interview-ats-exports", auth.token, activeInterviewId],
+    queryFn: () => api.getInterviewATSExports(auth.token as string, activeInterviewId as string),
     enabled: Boolean(auth.token && activeInterviewId),
   });
 
@@ -104,7 +109,7 @@ export default function CandidateDetailPage() {
       }),
     onSuccess: async (interview) => {
       setInviteResult(interview);
-      await Promise.all([candidate.refetch(), reviewWorkspace.refetch(), emailDeliveries.refetch()]);
+      await Promise.all([candidate.refetch(), reviewWorkspace.refetch(), emailDeliveries.refetch(), atsExports.refetch()]);
     },
   });
 
@@ -118,7 +123,7 @@ export default function CandidateDetailPage() {
     onSuccess: async () => {
       setDecisionNotes("");
       setOverrideRecommendation(false);
-      await Promise.all([candidate.refetch(), reviewWorkspace.refetch()]);
+      await Promise.all([candidate.refetch(), reviewWorkspace.refetch(), atsExports.refetch()]);
     },
   });
 
@@ -126,6 +131,12 @@ export default function CandidateDetailPage() {
     mutationFn: () => api.sendInterviewEmail(auth.token as string, activeInterviewId as string),
     onSuccess: async () => {
       await emailDeliveries.refetch();
+    },
+  });
+  const exportToATSMutation = useMutation({
+    mutationFn: () => api.exportInterviewToATS(auth.token as string, activeInterviewId as string),
+    onSuccess: async () => {
+      await atsExports.refetch();
     },
   });
 
@@ -642,6 +653,71 @@ export default function CandidateDetailPage() {
                     </p>
                   )}
                 </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-[24px] border border-border bg-white/70 px-4 py-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-text">ATS export</p>
+                  <p className="mt-2 text-sm leading-7 text-muted">
+                    Push recruiter-approved candidate movement into an external ATS webhook without blocking the recruiter if the downstream system is temporarily unavailable.
+                  </p>
+                </div>
+                <Badge tone={atsExports.data?.[0]?.status === "delivered" ? "success" : atsExports.data?.[0]?.status === "failed" ? "danger" : "neutral"}>
+                  {atsExports.data?.length ? titleCase(atsExports.data[0].status) : "Not exported"}
+                </Badge>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => exportToATSMutation.mutate()}
+                  disabled={!reviewWorkspace.data?.latest_decision || !activeInterviewId || exportToATSMutation.isPending}
+                  className="rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {exportToATSMutation.isPending
+                    ? "Exporting..."
+                    : atsExports.data?.length
+                      ? "Resend to ATS"
+                      : "Send to ATS"}
+                </button>
+                <p className="self-center text-sm text-muted">
+                  Automatic export runs for configured shortlist stages. This action lets recruiters retry a failed handoff manually.
+                </p>
+              </div>
+              <div className="mt-4 space-y-3">
+                {atsExports.data?.length ? (
+                  atsExports.data.map((delivery) => (
+                    <div key={delivery.id} className="rounded-[20px] border border-border bg-surface-elevated px-4 py-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <Badge tone={delivery.status === "delivered" ? "success" : delivery.status === "failed" ? "danger" : "neutral"}>
+                          {titleCase(delivery.status)}
+                        </Badge>
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-soft">
+                          {new Date(delivery.created_at).toLocaleString()}
+                        </p>
+                      </div>
+                      <p className="mt-3 text-sm font-medium text-text">
+                        {titleCase(delivery.event_name.replace("candidate.", "").replaceAll("_", " "))} via {delivery.provider}
+                      </p>
+                      <p className="mt-2 text-sm leading-7 text-muted break-all">
+                        {delivery.target_url}
+                      </p>
+                      <p className="mt-2 text-sm text-muted">
+                        HTTP status: {delivery.response_status_code || "n/a"}
+                      </p>
+                      {delivery.error_message ? (
+                        <p className="mt-2 text-sm leading-7 text-danger">
+                          {delivery.error_message}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm leading-7 text-muted">
+                    No ATS export has been recorded yet. Save webhook settings first, then record a shortlist-stage decision or trigger a manual export here.
+                  </p>
+                )}
               </div>
             </div>
           </Card>

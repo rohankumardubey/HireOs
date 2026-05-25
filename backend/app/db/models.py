@@ -79,6 +79,12 @@ class NotificationStatus(str, Enum):
     failed = "failed"
 
 
+class WebhookDeliveryStatus(str, Enum):
+    pending = "pending"
+    delivered = "delivered"
+    failed = "failed"
+
+
 class Company(Base, TimestampMixin):
     __tablename__ = "companies"
 
@@ -363,6 +369,27 @@ class NotificationDelivery(Base, TimestampMixin):
     provider: Mapped[str] = mapped_column(String(50), default="file")
     status: Mapped[str] = mapped_column(String(50), default=NotificationStatus.pending.value, index=True)
     error_message: Mapped[str | None] = mapped_column(Text)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class WebhookDelivery(Base, TimestampMixin):
+    __tablename__ = "webhook_deliveries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    company_id: Mapped[str] = mapped_column(ForeignKey("companies.id"), index=True)
+    interview_id: Mapped[str | None] = mapped_column(ForeignKey("interviews.id"), index=True)
+    candidate_id: Mapped[str | None] = mapped_column(ForeignKey("candidates.id"), index=True)
+    job_id: Mapped[str | None] = mapped_column(ForeignKey("jobs.id"), index=True)
+    recruiter_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
+    integration_name: Mapped[str] = mapped_column(String(100), default="ats_webhook", index=True)
+    event_name: Mapped[str] = mapped_column(String(100), index=True)
+    target_url: Mapped[str] = mapped_column(String(500))
+    provider: Mapped[str] = mapped_column(String(100), default="ats_webhook")
+    status: Mapped[str] = mapped_column(String(50), default=WebhookDeliveryStatus.pending.value, index=True)
+    response_status_code: Mapped[int | None] = mapped_column(Integer)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    request_body: Mapped[str] = mapped_column(Text)
+    response_body: Mapped[str | None] = mapped_column(Text)
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
