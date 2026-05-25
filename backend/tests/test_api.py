@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from urllib.parse import parse_qs, urlparse
@@ -11,7 +11,8 @@ from fastapi.testclient import TestClient
 import app.main as main_module
 from app.api.routes import auth as auth_route
 from app.api.routes import interviews as interviews_route
-from app.db.session import engine, init_db
+from app.db.models import Interview
+from app.db.session import SessionLocal, engine, init_db
 
 
 def test_health() -> None:
@@ -543,6 +544,80 @@ def test_interview_invite_returns_shareable_links() -> None:
     assert payload["share_links"]["email_compose_url"].startswith("mailto:rhea%40example.com")
 
 
+def test_send_interview_email_creates_delivery_history() -> None:
+    client = TestClient(main_module.app)
+    email = f"notify+{uuid4().hex[:8]}@hireos.ai"
+    company = f"Notify Co {uuid4().hex[:6]}"
+    signup = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "full_name": "Notify Recruiter",
+            "email": email,
+            "password": "Demo@123",
+            "company_name": company,
+            "role": "admin",
+        },
+    )
+    assert signup.status_code == 200
+    token = signup.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    job = client.post(
+        "/api/v1/jobs",
+        headers=headers,
+        json={
+            "title": "Backend Engineer",
+            "department": "Engineering",
+            "location": "Remote",
+            "work_mode": "remote",
+            "experience_range": "3-6 years",
+            "employment_type": "full-time",
+            "salary_range": "$120k-$145k",
+            "status": "open",
+            "job_description": "Build APIs with Python, FastAPI, and PostgreSQL.",
+            "required_skills": ["python", "fastapi", "postgresql"],
+            "preferred_skills": ["redis"],
+        },
+    )
+    assert job.status_code == 200
+    job_id = job.json()["id"]
+
+    upload = client.post(
+        "/api/v1/candidates/upload-resume",
+        headers=headers,
+        files={"file": ("resume.txt", b"Rhea Notify\nrhea@example.com\nBackend Engineer\nPython FastAPI PostgreSQL\n", "text/plain")},
+        data={"name": "Rhea Notify", "email": "rhea@example.com", "location": "Remote"},
+    )
+    assert upload.status_code == 200
+    candidate_id = upload.json()["candidate"]["id"]
+
+    invite = client.post(
+        "/api/v1/interviews/invite",
+        headers=headers,
+        json={
+            "candidate_id": candidate_id,
+            "job_id": job_id,
+            "interview_type": "Technical screening",
+            "mode": "text",
+            "meeting_provider": "google_meet",
+        },
+    )
+    assert invite.status_code == 200
+    interview_id = invite.json()["id"]
+
+    send = client.post(f"/api/v1/interviews/{interview_id}/send-email", headers=headers)
+    assert send.status_code == 200
+    payload = send.json()
+    assert payload["delivery"]["recipient_email"] == "rhea@example.com"
+    assert payload["delivery"]["status"] in {"fallback", "delivered"}
+
+    history = client.get(f"/api/v1/interviews/{interview_id}/email-deliveries", headers=headers)
+    assert history.status_code == 200
+    history_payload = history.json()
+    assert len(history_payload) == 1
+    assert history_payload[0]["subject"]
+
+
 def test_live_video_invite_uses_real_join_url() -> None:
     client = TestClient(main_module.app)
     email = f"live+{uuid4().hex[:8]}@hireos.ai"
@@ -822,3 +897,95 @@ def test_ranking_simulator_reorders_candidates_when_weights_change() -> None:
     assert payload["candidates"][0]["candidate_name"] == "Ivy Interview"
     assert payload["candidates"][0]["rank_change"] > 0
     assert payload["summary"]
+
+
+def test_interview_reminder_preview_and_run() -> None:
+    client = TestClient(main_module.app)
+    email = f"reminders+{uuid4().hex[:8]}@hireos.ai"
+    company = f"Reminder Co {uuid4().hex[:6]}"
+    signup = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "full_name": "Reminder Recruiter",
+            "email": email,
+            "password": "Demo@123",
+            "company_name": company,
+            "role": "admin",
+        },
+    )
+    assert signup.status_code == 200
+    token = signup.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    job = client.post(
+        "/api/v1/jobs",
+        headers=headers,
+        json={
+            "title": "Analytics Engineer",
+            "department": "Data",
+            "location": "Remote",
+            "work_mode": "remote",
+            "experience_range": "3-6 years",
+            "employment_type": "full-time",
+            "salary_range": "$120k-$145k",
+            "status": "open",
+            "job_description": "Own analytics models with SQL, Python, and stakeholder communication.",
+            "required_skills": ["sql", "python"],
+            "preferred_skills": ["dbt"],
+        },
+    )
+    assert job.status_code == 200
+    job_id = job.json()["id"]
+
+    candidate_payloads = [
+        ("Nina NoShow", "nina@example.com", b"Nina NoShow\nSQL Python\n"),
+        ("Omar Partial", "omar@example.com", b"Omar Partial\nSQL Python DBT\n"),
+    ]
+    interview_ids: list[str] = []
+    for name, candidate_email, resume_text in candidate_payloads:
+        upload = client.post(
+            "/api/v1/candidates/upload-resume",
+            headers=headers,
+            files={"file": ("resume.txt", resume_text, "text/plain")},
+            data={"name": name, "email": candidate_email, "location": "Remote"},
+        )
+        assert upload.status_code == 200
+        candidate_id = upload.json()["candidate"]["id"]
+
+        invite = client.post(
+            "/api/v1/interviews/invite",
+            headers=headers,
+            json={
+                "candidate_id": candidate_id,
+                "job_id": job_id,
+                "interview_type": "Technical screening",
+                "mode": "text",
+            },
+        )
+        assert invite.status_code == 200
+        interview_ids.append(invite.json()["id"])
+
+    started = client.post(f"/api/v1/interviews/{interview_ids[1]}/start", json={"consent_given": True})
+    assert started.status_code == 200
+
+    stale_time = datetime.now(UTC).replace(tzinfo=None)
+    with SessionLocal() as db:
+        invited = db.get(Interview, interview_ids[0])
+        partial = db.get(Interview, interview_ids[1])
+        assert invited and partial
+        invited.created_at = stale_time - timedelta(hours=25)
+        partial.started_at = stale_time - timedelta(hours=8)
+        db.commit()
+
+    preview = client.get("/api/v1/interviews/reminders/preview", headers=headers)
+    assert preview.status_code == 200
+    payload = preview.json()
+    assert payload["invited_no_show_count"] == 1
+    assert payload["incomplete_count"] == 1
+    assert len(payload["candidates"]) == 2
+
+    run = client.post("/api/v1/interviews/reminders/run", headers=headers)
+    assert run.status_code == 200
+    run_payload = run.json()
+    assert run_payload["fallback_count"] + run_payload["sent_count"] == 2
+    assert len(run_payload["deliveries"]) == 2

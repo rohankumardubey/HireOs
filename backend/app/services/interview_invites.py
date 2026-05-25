@@ -63,6 +63,8 @@ class InterviewInviteLinkBuilder:
                 "schedule_type": normalized_schedule,
                 "schedule_label": schedule_label,
                 "scheduled_at": scheduled_at,
+                "email_subject": subject,
+                "email_body": email_body,
             }
 
         subject = f"HireOS AI interview invitation for {job_title}"
@@ -131,4 +133,6 @@ class InterviewInviteLinkBuilder:
             "schedule_type": "async",
             "schedule_label": "Async AI interview",
             "scheduled_at": None,
+            "email_subject": subject,
+            "email_body": email_body,
         }

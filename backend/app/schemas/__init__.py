@@ -178,6 +178,8 @@ class InterviewShareLinks(BaseModel):
     schedule_type: str
     schedule_label: str
     scheduled_at: datetime | None = None
+    email_subject: str | None = None
+    email_body: str | None = None
 
 
 class InterviewInviteResponse(ORMModel):
@@ -192,6 +194,56 @@ class InterviewInviteResponse(ORMModel):
     consent_given: bool
     created_at: datetime
     share_links: InterviewShareLinks
+
+
+class NotificationDeliveryRead(ORMModel):
+    id: str
+    company_id: str
+    interview_id: str | None = None
+    candidate_id: str | None = None
+    recruiter_id: str | None = None
+    channel: str
+    notification_type: str
+    recipient_email: EmailStr
+    subject: str
+    body_text: str
+    provider: str
+    status: str
+    error_message: str | None = None
+    metadata_json: dict = {}
+    created_at: datetime
+
+
+class InterviewEmailSendResponse(BaseModel):
+    status: str
+    delivery: NotificationDeliveryRead
+
+
+class ReminderCandidatePreview(BaseModel):
+    interview_id: str
+    candidate_id: str
+    candidate_name: str
+    candidate_email: EmailStr
+    job_id: str
+    job_title: str
+    reminder_type: str
+    reminder_reason: str
+    last_activity_at: datetime
+    reminder_attempts: int
+
+
+class ReminderPreviewResponse(BaseModel):
+    invited_no_show_count: int
+    incomplete_count: int
+    candidates: list[ReminderCandidatePreview]
+    policy_note: str
+
+
+class ReminderRunResponse(BaseModel):
+    sent_count: int
+    fallback_count: int
+    failed_count: int
+    deliveries: list[NotificationDeliveryRead]
 
 
 class InterviewRead(ORMModel):

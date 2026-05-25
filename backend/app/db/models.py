@@ -72,6 +72,13 @@ class EventStatus(str, Enum):
     failed = "failed"
 
 
+class NotificationStatus(str, Enum):
+    pending = "pending"
+    delivered = "delivered"
+    fallback = "fallback"
+    failed = "failed"
+
+
 class Company(Base, TimestampMixin):
     __tablename__ = "companies"
 
@@ -338,6 +345,25 @@ class RecruiterDecision(Base, TimestampMixin):
     decision: Mapped[str] = mapped_column(String(50))
     notes: Mapped[str | None] = mapped_column(Text)
     override_ai_recommendation: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class NotificationDelivery(Base, TimestampMixin):
+    __tablename__ = "notification_deliveries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    company_id: Mapped[str] = mapped_column(ForeignKey("companies.id"), index=True)
+    interview_id: Mapped[str | None] = mapped_column(ForeignKey("interviews.id"), index=True)
+    candidate_id: Mapped[str | None] = mapped_column(ForeignKey("candidates.id"), index=True)
+    recruiter_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
+    channel: Mapped[str] = mapped_column(String(50), default="email")
+    notification_type: Mapped[str] = mapped_column(String(100), default="interview_invite")
+    recipient_email: Mapped[str] = mapped_column(String(255), index=True)
+    subject: Mapped[str] = mapped_column(String(255))
+    body_text: Mapped[str] = mapped_column(Text)
+    provider: Mapped[str] = mapped_column(String(50), default="file")
+    status: Mapped[str] = mapped_column(String(50), default=NotificationStatus.pending.value, index=True)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class AuditLog(Base, TimestampMixin):

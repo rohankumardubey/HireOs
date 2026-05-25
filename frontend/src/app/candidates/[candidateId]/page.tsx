@@ -1,4 +1,5 @@
 "use client";
+
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { useState } from "react";
@@ -53,6 +54,7 @@ export default function CandidateDetailPage() {
   const [decision, setDecision] = useState("human_review_required");
   const [decisionNotes, setDecisionNotes] = useState("");
   const [overrideRecommendation, setOverrideRecommendation] = useState(false);
+  const activeInterviewId = inviteResult?.id || null;
 
   const candidate = useQuery({
     queryKey: ["candidate", auth.token, candidateId],
@@ -73,6 +75,11 @@ export default function CandidateDetailPage() {
     queryKey: ["candidate-review-workspace", auth.token, candidateId, selectedJobId],
     queryFn: () => api.getCandidateReviewWorkspace(auth.token as string, candidateId, selectedJobId),
     enabled: Boolean(auth.token && candidateId && selectedJobId),
+  });
+  const emailDeliveries = useQuery({
+    queryKey: ["interview-email-deliveries", auth.token, activeInterviewId],
+    queryFn: () => api.getInterviewEmailDeliveries(auth.token as string, activeInterviewId as string),
+    enabled: Boolean(auth.token && activeInterviewId),
   });
 
   const matchMutation = useMutation({
@@ -97,7 +104,7 @@ export default function CandidateDetailPage() {
       }),
     onSuccess: async (interview) => {
       setInviteResult(interview);
-      await reviewWorkspace.refetch();
+      await Promise.all([candidate.refetch(), reviewWorkspace.refetch(), emailDeliveries.refetch()]);
     },
   });
 
@@ -115,24 +122,32 @@ export default function CandidateDetailPage() {
     },
   });
 
+  const sendEmailMutation = useMutation({
+    mutationFn: () => api.sendInterviewEmail(auth.token as string, activeInterviewId as string),
+    onSuccess: async () => {
+      await emailDeliveries.refetch();
+    },
+  });
+
   const inviteDisabled =
     !selectedJobId ||
     inviteMutation.isPending ||
-    (interviewMode === "video" &&
-      meetingProvider === "zoom" &&
-      !meetingJoinUrl.trim()) ||
+    (interviewMode === "video" && meetingProvider === "zoom" && !meetingJoinUrl.trim()) ||
     (interviewMode === "video" &&
       meetingProvider === "google_meet" &&
       !googleStatus.data?.connected &&
       !meetingJoinUrl.trim()) ||
     (interviewMode === "video" && scheduleType === "scheduled" && !scheduledAt);
+
   const reviewDecisionDisabled =
-    recruiterDecisionMutation.isPending || !reviewWorkspace.data?.can_record_decision || !reviewWorkspace.data?.latest_interview?.id;
+    recruiterDecisionMutation.isPending ||
+    !reviewWorkspace.data?.can_record_decision ||
+    !reviewWorkspace.data?.latest_interview?.id;
 
   return (
     <AppShell
       title={candidate.data?.name || "Candidate detail"}
-      subtitle="Inspect the parsed resume profile, run role matching, launch an AI interview, and record the final recruiter-controlled decision with auditability."
+      subtitle="Inspect the parsed resume profile, run role matching, launch an AI interview, send branded invites, and record the final recruiter-controlled decision with auditability."
     >
       <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
         <Card>
@@ -293,13 +308,8 @@ export default function CandidateDetailPage() {
             {inviteResult ? (
               <div className="rounded-[24px] bg-success-soft px-4 py-4 text-sm text-text">
                 <p className="font-semibold text-text">
-                  {interviewMode === "video"
-                    ? "Live video"
-                    : interviewMode === "voice"
-                      ? "Voice"
-                      : "Text"}{" "}
-                  interview created for{" "}
-                  {inviteResult.share_links.candidate_email}.
+                  {interviewMode === "video" ? "Live video" : interviewMode === "voice" ? "Voice" : "Text"}{" "}
+                  interview created for {inviteResult.share_links.candidate_email}.
                 </p>
                 <p className="mt-2 text-sm leading-7 text-muted">
                   {inviteResult.share_links.meeting_note}
@@ -331,6 +341,14 @@ export default function CandidateDetailPage() {
                   >
                     Email candidate
                   </a>
+                  <button
+                    type="button"
+                    disabled={sendEmailMutation.isPending}
+                    onClick={() => sendEmailMutation.mutate()}
+                    className="rounded-full border border-border bg-white/70 px-4 py-2 text-sm font-semibold text-text disabled:opacity-60"
+                  >
+                    {sendEmailMutation.isPending ? "Sending..." : "Send with HireOS"}
+                  </button>
                   <a
                     href={
                       interviewMode === "video"
@@ -341,16 +359,12 @@ export default function CandidateDetailPage() {
                     rel="noreferrer"
                     className="rounded-full border border-border bg-white/70 px-4 py-2 text-sm font-semibold text-text"
                   >
-                    {interviewMode === "video"
-                      ? "Open candidate join link"
-                      : "Open candidate interview"}
+                    {interviewMode === "video" ? "Open candidate join link" : "Open candidate interview"}
                   </a>
                 </div>
                 <div className="mt-4 rounded-[20px] bg-white/80 px-4 py-4">
                   <p className="text-xs uppercase tracking-[0.2em] text-muted-soft">
-                    {interviewMode === "video"
-                      ? "Candidate video join link"
-                      : "Candidate interview link"}
+                    {interviewMode === "video" ? "Candidate video join link" : "Candidate interview link"}
                   </p>
                   <a
                     href={
@@ -382,6 +396,46 @@ export default function CandidateDetailPage() {
                     </a>
                   </div>
                 ) : null}
+                <div className="mt-4 rounded-[20px] border border-border bg-white/80 px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted-soft">
+                      Invite delivery history
+                    </p>
+                    <Badge tone={emailDeliveries.data?.[0]?.status === "delivered" ? "success" : "neutral"}>
+                      {emailDeliveries.data?.length ? titleCase(emailDeliveries.data[0].status) : "Not sent"}
+                    </Badge>
+                  </div>
+                  {sendEmailMutation.error ? (
+                    <p className="mt-3 text-sm text-rose-700">{sendEmailMutation.error.message}</p>
+                  ) : null}
+                  <div className="mt-3 space-y-3">
+                    {emailDeliveries.data?.length ? (
+                      emailDeliveries.data.map((delivery) => (
+                        <div
+                          key={delivery.id}
+                          className="rounded-[16px] border border-border bg-surface-elevated px-3 py-3"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <p className="text-sm font-semibold text-text">
+                              {titleCase(delivery.status)} via {titleCase(delivery.provider)}
+                            </p>
+                            <p className="text-xs uppercase tracking-[0.16em] text-muted-soft">
+                              {new Date(delivery.created_at).toLocaleString()}
+                            </p>
+                          </div>
+                          <p className="mt-2 text-sm text-muted">{delivery.recipient_email}</p>
+                          {delivery.error_message ? (
+                            <p className="mt-2 text-sm text-rose-700">{delivery.error_message}</p>
+                          ) : null}
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm leading-7 text-muted">
+                        No HireOS email has been sent yet. Use `Send with HireOS` to deliver a branded invite and keep the delivery log attached to this interview.
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
             ) : null}
             {matchResult ? (
@@ -435,7 +489,9 @@ export default function CandidateDetailPage() {
               <div className="rounded-[22px] bg-white/75 px-4 py-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-muted-soft">Resume match</p>
                 <p className="mt-2 font-display text-3xl font-semibold text-text">
-                  {reviewWorkspace.data?.latest_match ? `${formatScore(reviewWorkspace.data.latest_match.overall_score)}%` : "Pending"}
+                  {reviewWorkspace.data?.latest_match
+                    ? `${formatScore(reviewWorkspace.data.latest_match.overall_score)}%`
+                    : "Pending"}
                 </p>
                 <p className="mt-2 text-sm text-muted">
                   {reviewWorkspace.data?.latest_match
@@ -446,7 +502,9 @@ export default function CandidateDetailPage() {
               <div className="rounded-[22px] bg-white/75 px-4 py-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-muted-soft">Interview status</p>
                 <p className="mt-2 font-display text-3xl font-semibold text-text">
-                  {reviewWorkspace.data?.latest_interview ? titleCase(reviewWorkspace.data.latest_interview.status) : "Not invited"}
+                  {reviewWorkspace.data?.latest_interview
+                    ? titleCase(reviewWorkspace.data.latest_interview.status)
+                    : "Not invited"}
                 </p>
                 <p className="mt-2 text-sm text-muted">
                   {reviewWorkspace.data?.latest_interview
@@ -598,7 +656,10 @@ export default function CandidateDetailPage() {
             <div className="mt-6 space-y-3">
               {reviewWorkspace.data?.audit_timeline?.length ? (
                 reviewWorkspace.data.audit_timeline.map((entry, index) => (
-                  <div key={`${entry.source}-${entry.action}-${index}`} className="relative rounded-[22px] border border-border bg-white/70 px-4 py-4">
+                  <div
+                    key={`${entry.source}-${entry.action}-${index}`}
+                    className="relative rounded-[22px] border border-border bg-white/70 px-4 py-4"
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <Badge tone={entry.source === "audit" ? "brand" : entry.source === "report" ? "warning" : "neutral"}>
                         {titleCase(entry.source)}

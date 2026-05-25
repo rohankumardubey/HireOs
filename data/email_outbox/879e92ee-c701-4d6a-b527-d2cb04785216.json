@@ -1,0 +1,12 @@
+{
+  "delivery_id": "879e92ee-c701-4d6a-b527-d2cb04785216",
+  "recipient_email": "rohankumardubey497@gmail.com",
+  "subject": "HireOS AI interview invitation for Data Engineer",
+  "body_text": "Hi man,\n\nYou have been invited to the HireOS AI interview flow for the Data Engineer role.\n\nCandidate interview link: http://localhost:3000/interview/7d1d0cff-34f9-4873-9bd1-2d6f059ba796\nGoogle Calendar event draft: https://calendar.google.com/calendar/render?action=TEMPLATE&text=HireOS%20AI%20interview%20-%20Data%20Engineer&details=Candidate%20portal%20link%3A%20http%3A%2F%2Flocalhost%3A3000%2Finterview%2F7d1d0cff-34f9-4873-9bd1-2d6f059ba796%0A%0ARecruiter%20note%3A%20AI-generated%20interview%20scores%20are%20decision-support%20signals%20and%20should%20be%20reviewed%20by%20a%20human%20recruiter.&add=rohankumardubey497%40gmail.com\nThe recruiter can save that event and send the calendar invite to you.\n\nPlease reply if you need a different time or accommodation.\n\nBest,\nHireOS AI Recruiting",
+  "metadata": {
+    "job_title": "Data Engineer",
+    "candidate_portal_url": "http://localhost:3000/interview/7d1d0cff-34f9-4873-9bd1-2d6f059ba796",
+    "mode": "text",
+    "meeting_provider": "google_meet"
+  }
+}
