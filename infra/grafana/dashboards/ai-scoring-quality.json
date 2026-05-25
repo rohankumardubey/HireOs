@@ -1,0 +1,23 @@
+{
+  "title": "AI Scoring Quality",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Score request rate",
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total[5m]))"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}
+

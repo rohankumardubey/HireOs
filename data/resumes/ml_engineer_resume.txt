@@ -1,0 +1,16 @@
+Nina Singh
+nina.singh@example.com
++44 7700 900123
+ML Engineer
+
+Summary
+3 years shipping machine learning and LLM applications with Python, PyTorch, and cloud deployment tooling.
+
+Experience
+- Built semantic scoring systems with embedding features and human review workflows.
+- Created offline evaluation datasets and latency dashboards.
+- Used SQL, AWS, Docker, and PyTorch in production.
+
+Education
+Bachelor of Engineering in Artificial Intelligence
+

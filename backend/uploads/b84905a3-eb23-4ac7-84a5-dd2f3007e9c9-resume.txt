@@ -1,0 +1,3 @@
+Riya Streams
+Senior Data Engineer
+6 years with Python, SQL, Kafka, Airflow, PostgreSQL, Spark.

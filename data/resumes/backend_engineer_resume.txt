@@ -1,0 +1,16 @@
+Mia Chen
+mia.chen@example.com
++1 415 555 0101
+Backend Engineer
+
+Summary
+FastAPI and PostgreSQL engineer with 5 years of experience building internal SaaS platforms.
+
+Experience
+- Developed Python APIs with FastAPI, Redis caching, and Docker-based local workflows.
+- Designed relational schemas and handled auth, audit logs, and metrics.
+- Partnered with recruiters to automate workflow approvals.
+
+Education
+MS in Software Engineering
+

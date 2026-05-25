@@ -1,0 +1,23 @@
+{
+  "title": "Kafka Event Pipeline Health",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Redpanda availability",
+      "targets": [
+        {
+          "expr": "up{job=\"redpanda\"}"
+        }
+      ],
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}
+

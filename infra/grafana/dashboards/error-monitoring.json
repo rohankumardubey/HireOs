@@ -1,0 +1,23 @@
+{
+  "title": "Error Monitoring",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Backend availability",
+      "targets": [
+        {
+          "expr": "up{job=\"hireos-backend\"}"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}
+

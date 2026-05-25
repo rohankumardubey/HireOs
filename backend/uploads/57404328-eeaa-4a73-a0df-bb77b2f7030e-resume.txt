@@ -1,0 +1,3 @@
+Noah Pipelines
+Data Platform Engineer
+5 years with Python, SQL, Airflow, PostgreSQL and warehouse design.

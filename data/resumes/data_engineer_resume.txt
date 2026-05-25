@@ -1,0 +1,16 @@
+Aarav Patel
+aarav.patel@example.com
++91 9876543210
+Senior Data Engineer
+
+Summary
+6 years building Python, SQL, Kafka, and Airflow data pipelines for analytics-heavy platforms.
+
+Experience
+- Built Kafka ingestion services and Airflow DAGs for daily hiring funnel metrics.
+- Modeled data in PostgreSQL and Parquet for product and recruiting analytics.
+- Worked with Docker, AWS, and dbt.
+
+Education
+Bachelor of Technology in Computer Science
+

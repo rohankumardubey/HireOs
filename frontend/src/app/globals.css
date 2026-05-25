@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f5f1e8;
+  --surface: rgba(255, 255, 255, 0.76);
+  --surface-strong: #ffffff;
+  --border: rgba(25, 31, 44, 0.1);
+  --text: #142033;
+  --muted: #5f6b7e;
+  --muted-soft: #7a8597;
+  --brand: #135d66;
+  --brand-strong: #0d4952;
+  --brand-soft: #d8f0ea;
+  --accent: #ec8f5e;
+  --danger-soft: #fee6dd;
+  --success-soft: #ddf4e6;
+  --shadow: 0 24px 60px rgba(20, 32, 51, 0.08);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-strong: var(--surface-strong);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-muted-soft: var(--muted-soft);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-soft: var(--brand-soft);
+  --color-accent: var(--accent);
+  --color-danger-soft: var(--danger-soft);
+  --color-success-soft: var(--success-soft);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(236, 143, 94, 0.18), transparent 30%),
+    radial-gradient(circle at top right, rgba(19, 93, 102, 0.12), transparent 25%),
+    linear-gradient(180deg, #faf6ee 0%, #f2ede4 100%);
+  color: var(--text);
+  font-family: var(--font-body), sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.app-shell-grid {
+  display: grid;
+  min-height: 100vh;
+  grid-template-columns: 280px 1fr;
+}
+
+.glass {
+  backdrop-filter: blur(20px);
+  box-shadow: var(--shadow);
+}
+
+@media (max-width: 980px) {
+  .app-shell-grid {
+    grid-template-columns: 1fr;
+  }
+}

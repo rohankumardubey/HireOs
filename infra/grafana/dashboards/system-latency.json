@@ -1,0 +1,23 @@
+{
+  "title": "System Latency",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Backend request latency",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))"
+        }
+      ],
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}
+
