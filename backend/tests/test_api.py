@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import json
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from urllib.parse import parse_qs, urlparse
@@ -11,6 +12,7 @@ from fastapi.testclient import TestClient
 import app.main as main_module
 from app.api.routes import auth as auth_route
 from app.api.routes import interviews as interviews_route
+import app.services.ats_webhooks as ats_webhooks_service
 from app.db.models import Interview
 from app.db.session import SessionLocal, engine, init_db
 
@@ -989,3 +991,165 @@ def test_interview_reminder_preview_and_run() -> None:
     run_payload = run.json()
     assert run_payload["fallback_count"] + run_payload["sent_count"] == 2
     assert len(run_payload["deliveries"]) == 2
+
+
+def test_ats_webhook_export_flows_from_recruiter_decision(monkeypatch) -> None:
+    client = TestClient(main_module.app)
+    email = f"ats+{uuid4().hex[:8]}@hireos.ai"
+    company = f"ATS Co {uuid4().hex[:6]}"
+    signup = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "full_name": "ATS Recruiter",
+            "email": email,
+            "password": "Demo@123",
+            "company_name": company,
+            "role": "admin",
+        },
+    )
+    assert signup.status_code == 200
+    token = signup.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    status_before = client.get("/api/v1/integrations/ats-webhook/status", headers=headers)
+    assert status_before.status_code == 200
+    assert status_before.json()["configured"] is False
+
+    class DummyResponse:
+        status_code = 202
+        text = "accepted"
+
+    class DummyClient:
+        def __init__(self, timeout: int) -> None:
+            self.timeout = timeout
+
+        def __enter__(self) -> "DummyClient":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        def post(self, url: str, content: str, headers: dict[str, str]) -> DummyResponse:
+            payload = json.loads(content)
+            assert url == "https://ats.example.com/webhooks/hireos"
+            assert headers["Authorization"] == "Bearer ats-token"
+            assert headers["X-HireOS-Signature"].startswith("sha256=")
+            assert payload["compliance"]["human_in_the_loop"] is True
+            return DummyResponse()
+
+    monkeypatch.setattr(ats_webhooks_service.httpx, "Client", DummyClient)
+
+    config = client.patch(
+        "/api/v1/integrations/ats-webhook",
+        headers=headers,
+        json={
+            "enabled": True,
+            "provider_label": "Greenhouse",
+            "endpoint_url": "https://ats.example.com/webhooks/hireos",
+            "auth_token": "ats-token",
+            "signing_secret": "signing-secret",
+            "export_stages": ["shortlisted", "moved_to_next_round", "hired"],
+        },
+    )
+    assert config.status_code == 200
+    assert config.json()["enabled"] is True
+    assert config.json()["has_auth_token"] is True
+
+    company_response = client.get("/api/v1/companies/me", headers=headers)
+    assert company_response.status_code == 200
+    assert "auth_token" not in json.dumps(company_response.json()["settings_json"])
+
+    test_delivery = client.post("/api/v1/integrations/ats-webhook/test", headers=headers)
+    assert test_delivery.status_code == 200
+    assert test_delivery.json()["status"] == "delivered"
+
+    job = client.post(
+        "/api/v1/jobs",
+        headers=headers,
+        json={
+            "title": "Integration Engineer",
+            "department": "Platform",
+            "location": "Remote",
+            "work_mode": "remote",
+            "experience_range": "4-7 years",
+            "employment_type": "full-time",
+            "salary_range": "$135k-$165k",
+            "status": "open",
+            "job_description": "Build integrations, APIs, and webhook workflows with Python and SQL.",
+            "required_skills": ["python", "sql", "webhooks"],
+            "preferred_skills": ["fastapi"],
+        },
+    )
+    assert job.status_code == 200
+    job_id = job.json()["id"]
+
+    upload = client.post(
+        "/api/v1/candidates/upload-resume",
+        headers=headers,
+        files={"file": ("resume.txt", b"Jordan Integrations\njordan@example.com\nPython SQL webhooks FastAPI.\n", "text/plain")},
+        data={"name": "Jordan Integrations", "email": "jordan@example.com", "location": "Remote"},
+    )
+    assert upload.status_code == 200
+    candidate_id = upload.json()["candidate"]["id"]
+
+    match = client.post(f"/api/v1/candidates/{candidate_id}/match-job/{job_id}", headers=headers)
+    assert match.status_code == 200
+
+    invite = client.post(
+        "/api/v1/interviews/invite",
+        headers=headers,
+        json={
+            "candidate_id": candidate_id,
+            "job_id": job_id,
+            "interview_type": "Technical screening",
+            "mode": "text",
+        },
+    )
+    assert invite.status_code == 200
+    interview_id = invite.json()["id"]
+
+    start = client.post(f"/api/v1/interviews/{interview_id}/start", json={"consent_given": True})
+    assert start.status_code == 200
+
+    question = client.get(f"/api/v1/interviews/{interview_id}/next-question")
+    assert question.status_code == 200
+    question_id = question.json()["id"]
+
+    answer = client.post(
+        f"/api/v1/interviews/{interview_id}/answers",
+        json={
+            "question_id": question_id,
+            "answer_text": "I have shipped integration pipelines and webhook delivery tooling in production.",
+            "answer_mode": "text",
+            "latency_ms": 14000,
+        },
+    )
+    assert answer.status_code == 200
+
+    report = client.post(f"/api/v1/interviews/{interview_id}/complete")
+    assert report.status_code == 200
+
+    decision = client.post(
+        f"/api/v1/interviews/{interview_id}/decision",
+        headers=headers,
+        json={
+            "decision": "shortlisted",
+            "notes": "Approved by recruiter for downstream ATS handoff.",
+            "override_ai_recommendation": False,
+        },
+    )
+    assert decision.status_code == 200
+    assert decision.json()["ats_export"]["status"] == "delivered"
+
+    exports = client.get(f"/api/v1/interviews/{interview_id}/ats-exports", headers=headers)
+    assert exports.status_code == 200
+    assert len(exports.json()) == 1
+    assert exports.json()[0]["target_url"] == "https://ats.example.com/webhooks/hireos"
+
+    manual_retry = client.post(f"/api/v1/interviews/{interview_id}/export-ats", headers=headers)
+    assert manual_retry.status_code == 200
+    assert manual_retry.json()["status"] == "delivered"
+
+    exports_after_retry = client.get(f"/api/v1/interviews/{interview_id}/ats-exports", headers=headers)
+    assert exports_after_retry.status_code == 200
+    assert len(exports_after_retry.json()) == 2

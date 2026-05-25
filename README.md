@@ -10,6 +10,7 @@ HireOS AI is built as a production-style SaaS starter, not a demo chatbot. It co
 - Lets recruiters create jobs, parse job descriptions, upload resumes, and generate AI-assisted match results
 - Runs structured AI interview flows with question plans, answer scoring, follow-up guidance, and report generation
 - Shows recruiter dashboards, candidate ranking, analytics, and override-friendly human review workflows
+- Pushes recruiter-approved shortlist decisions into external ATS/webhook systems with delivery history and manual retry
 - Emits lifecycle events to Kafka when available, or local JSONL when running lightweight
 - Includes local observability, lakehouse-ready analytics assets, and evaluation scaffolding
 
@@ -63,6 +64,7 @@ flowchart LR
      - `SMTP_FROM_NAME`
      - `SMTP_USE_TLS`
    - if SMTP is left blank, HireOS still works and writes fallback invite payloads to `data/email_outbox/` for local demo use
+   - if you want automatic ATS/webhook handoff after recruiter shortlist decisions, optionally set `ATS_WEBHOOK_TIMEOUT_SECONDS` and then configure the webhook endpoint in `Settings`
 2. Quick start in one command:
    - `bash scripts/run_everything.sh`
    - or `make run-all`
@@ -96,6 +98,13 @@ SMTP_USE_TLS=true
 ```
 
 Use these when you want the `Send with HireOS` button on the candidate invite screen to deliver real emails through your mail provider.
+
+### ATS webhook export
+
+- Configure the endpoint from `/settings`
+- Supported automatic export stages: `shortlisted`, `moved_to_next_round`, `hired`
+- HireOS signs webhook bodies with `X-HireOS-Signature` when you store a signing secret
+- Failed exports never block recruiter decisions; recruiters can retry from the candidate decision workspace
 
 ## Demo flow
 

@@ -24,6 +24,8 @@ from app.db.models import (
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user, get_primary_membership, require_roles
 from app.schemas import (
+    ATSWebhookExportResponse,
+    ATSWebhookTriggerResult,
     AnswerSubmitRequest,
     DecisionRequest,
     InterviewEmailSendResponse,
@@ -33,10 +35,13 @@ from app.schemas import (
     InterviewRead,
     InterviewStartRequest,
     NotificationDeliveryRead,
+    RecruiterDecisionResponse,
     ReminderPreviewResponse,
     ReminderRunResponse,
     ReportRead,
+    WebhookDeliveryRead,
 )
+from app.services.ats_webhooks import ATSWebhookExportService
 from app.services.email_delivery import InterviewEmailDeliveryService
 from app.services.events import EventPublisher, log_audit
 from app.services.google_calendar import GoogleCalendarIntegrationService
@@ -51,6 +56,7 @@ invite_links = InterviewInviteLinkBuilder()
 google_calendar = GoogleCalendarIntegrationService()
 email_delivery = InterviewEmailDeliveryService()
 reminder_automation = InterviewReminderAutomationService()
+ats_webhooks = ATSWebhookExportService()
 
 
 @router.post("/invite", response_model=InterviewInviteResponse)
@@ -305,6 +311,75 @@ def list_interview_email_deliveries(
     return [NotificationDeliveryRead.model_validate(row) for row in rows]
 
 
+@router.get("/{interview_id}/ats-exports", response_model=list[WebhookDeliveryRead])
+def list_interview_ats_exports(
+    interview_id: str,
+    current_user=Depends(require_roles("admin", "recruiter", "hiring_manager")),
+    db: Session = Depends(get_db),
+) -> list[WebhookDeliveryRead]:
+    rows = ats_webhooks.list_deliveries(db, interview_id=interview_id)
+    return [WebhookDeliveryRead.model_validate(row) for row in rows]
+
+
+@router.post("/{interview_id}/export-ats", response_model=ATSWebhookExportResponse)
+def export_interview_to_ats(
+    interview_id: str,
+    current_user=Depends(require_roles("admin", "recruiter", "hiring_manager")),
+    db: Session = Depends(get_db),
+) -> ATSWebhookExportResponse:
+    interview = db.get(Interview, interview_id)
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+    company = db.get(Company, interview.company_id)
+    decision = (
+        db.execute(
+            select(RecruiterDecision)
+            .where(RecruiterDecision.interview_id == interview_id)
+            .order_by(RecruiterDecision.created_at.desc())
+        )
+        .scalars()
+        .first()
+    )
+    if not decision:
+        raise HTTPException(status_code=400, detail="Record a recruiter decision before exporting this candidate to an ATS.")
+
+    try:
+        delivery = ats_webhooks.send_candidate_export(
+            db,
+            company=company,
+            interview=interview,
+            decision=decision,
+            recruiter_id=current_user.id,
+            trigger="manual",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    log_audit(
+        db,
+        current_user.id,
+        "webhook_delivery",
+        delivery.id,
+        "ats.export_requested",
+        {"status": delivery.status, "event_name": delivery.event_name},
+    )
+    events.publish(
+        db,
+        event_type="ats_export.attempted",
+        topic_name="hireos.ats_export.attempted",
+        company_id=interview.company_id,
+        job_id=interview.job_id,
+        candidate_id=interview.candidate_id,
+        interview_id=interview.id,
+        actor_id=current_user.id,
+        actor_type="recruiter",
+        payload={"status": delivery.status, "event_name": delivery.event_name, "provider": delivery.provider},
+    )
+    db.commit()
+    db.refresh(delivery)
+    return ATSWebhookExportResponse(status=delivery.status, delivery=WebhookDeliveryRead.model_validate(delivery))
+
+
 @router.post("/{interview_id}/start", response_model=InterviewRead)
 def start_interview(interview_id: str, payload: InterviewStartRequest, db: Session = Depends(get_db)) -> InterviewRead:
     interview = db.get(Interview, interview_id)
@@ -494,16 +569,17 @@ def get_interview_report(interview_id: str, current_user=Depends(get_current_use
     return ReportRead.model_validate(report)
 
 
-@router.post("/{interview_id}/decision")
+@router.post("/{interview_id}/decision", response_model=RecruiterDecisionResponse)
 def recruiter_decision(
     interview_id: str,
     payload: DecisionRequest,
     current_user=Depends(require_roles("admin", "recruiter", "hiring_manager")),
     db: Session = Depends(get_db),
-) -> dict:
+) -> RecruiterDecisionResponse:
     interview = db.get(Interview, interview_id)
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
+    company = db.get(Company, interview.company_id)
     decision = RecruiterDecision(
         interview_id=interview.id,
         candidate_id=interview.candidate_id,
@@ -531,5 +607,48 @@ def recruiter_decision(
         actor_type="recruiter",
         payload=payload.model_dump(),
     )
+    export_status, export_delivery = ats_webhooks.maybe_export_for_decision(
+        db,
+        company=company,
+        interview=interview,
+        decision=decision,
+        recruiter_id=current_user.id,
+    )
+    if export_delivery:
+        log_audit(
+            db,
+            current_user.id,
+            "webhook_delivery",
+            export_delivery.id,
+            "ats.export_attempted",
+            {"status": export_delivery.status, "event_name": export_delivery.event_name},
+        )
+        events.publish(
+            db,
+            event_type="ats_export.attempted",
+            topic_name="hireos.ats_export.attempted",
+            company_id=interview.company_id,
+            job_id=interview.job_id,
+            candidate_id=interview.candidate_id,
+            interview_id=interview.id,
+            actor_id=current_user.id,
+            actor_type="recruiter",
+            payload={
+                "status": export_delivery.status,
+                "event_name": export_delivery.event_name,
+                "provider": export_delivery.provider,
+            },
+        )
     db.commit()
-    return {"status": "ok"}
+    return RecruiterDecisionResponse(
+        status="ok",
+        ats_export=ATSWebhookTriggerResult(
+            status=export_delivery.status if export_delivery else export_status,
+            delivery=WebhookDeliveryRead.model_validate(export_delivery) if export_delivery else None,
+            reason=(
+                None
+                if export_delivery
+                else "ATS export only runs for configured shortlist-stage decisions after webhook settings are enabled."
+            ),
+        ),
+    )
