@@ -349,6 +349,7 @@ def recruiter_decision(
         override_ai_recommendation=payload.override_ai_recommendation,
     )
     db.add(decision)
+    db.flush()
     candidate = db.get(Candidate, interview.candidate_id)
     if candidate:
         candidate.status = payload.decision

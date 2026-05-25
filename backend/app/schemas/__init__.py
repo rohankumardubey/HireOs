@@ -263,6 +263,40 @@ class DecisionRequest(BaseModel):
     override_ai_recommendation: bool = False
 
 
+class RecruiterDecisionRead(BaseModel):
+    id: str
+    decision: str
+    notes: str | None = None
+    override_ai_recommendation: bool = False
+    recruiter_id: str
+    recruiter_name: str
+    created_at: datetime
+
+
+class ReviewTimelineEntry(BaseModel):
+    timestamp: datetime
+    source: str
+    action: str
+    actor_label: str
+    summary: str
+    details: dict = Field(default_factory=dict)
+
+
+class CandidateReviewWorkspaceRead(BaseModel):
+    candidate_id: str
+    job_id: str
+    job_title: str
+    status: str
+    latest_match: MatchResultRead | None = None
+    latest_interview: InterviewRead | None = None
+    latest_report: ReportRead | None = None
+    latest_decision: RecruiterDecisionRead | None = None
+    decision_history: list[RecruiterDecisionRead] = Field(default_factory=list)
+    audit_timeline: list[ReviewTimelineEntry] = Field(default_factory=list)
+    can_record_decision: bool
+    decision_support_note: str
+
+
 class RankingEntry(BaseModel):
     rank: int
     candidate_id: str
@@ -275,6 +309,50 @@ class RankingEntry(BaseModel):
     status: str
     ai_recommendation: str
     recruiter_decision: str | None = None
+
+
+class RankingSimulationRequest(BaseModel):
+    resume_weight: float = Field(default=55, ge=0, le=100)
+    interview_weight: float = Field(default=45, ge=0, le=100)
+    missing_skill_penalty: float = Field(default=6, ge=0, le=25)
+    human_review_penalty: float = Field(default=8, ge=0, le=25)
+    shortlist_boost: float = Field(default=4, ge=0, le=20)
+
+
+class RankingSimulationConfigRead(BaseModel):
+    resume_weight: float
+    interview_weight: float
+    missing_skill_penalty: float
+    human_review_penalty: float
+    shortlist_boost: float
+
+
+class RankingSimulationCandidate(BaseModel):
+    candidate_id: str
+    candidate_name: str
+    baseline_rank: int
+    simulated_rank: int
+    rank_change: int
+    baseline_score: float
+    simulated_score: float
+    match_score: float
+    interview_score: float
+    required_skill_coverage: float
+    missing_skills: list[str]
+    human_review_required: bool
+    ai_recommendation: str
+    recruiter_decision: str | None = None
+    movement_reason: str
+
+
+class RankingSimulationResponse(BaseModel):
+    job_id: str
+    job_title: str
+    summary: str
+    top_mover_candidate_id: str | None = None
+    config: RankingSimulationConfigRead
+    candidates: list[RankingSimulationCandidate]
+    policy_note: str
 
 
 class AnalyticsOverview(BaseModel):

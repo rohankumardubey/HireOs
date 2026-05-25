@@ -1,0 +1,4 @@
+Casey Platform
+casey@example.com
+Platform Engineer
+Python PostgreSQL Kafka observability

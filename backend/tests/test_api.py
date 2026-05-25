@@ -286,6 +286,113 @@ def test_candidate_comparison_returns_ranked_snapshot() -> None:
     assert payload["human_review_note"]
 
 
+def test_candidate_review_workspace_includes_decision_history_and_timeline() -> None:
+    client = TestClient(main_module.app)
+    email = f"review+{uuid4().hex[:8]}@hireos.ai"
+    company = f"Review Co {uuid4().hex[:6]}"
+    signup = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "full_name": "Review Recruiter",
+            "email": email,
+            "password": "Demo@123",
+            "company_name": company,
+            "role": "admin",
+        },
+    )
+    assert signup.status_code == 200
+    token = signup.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    job = client.post(
+        "/api/v1/jobs",
+        headers=headers,
+        json={
+            "title": "Platform Engineer",
+            "department": "Infrastructure",
+            "location": "Remote",
+            "work_mode": "remote",
+            "experience_range": "4-8 years",
+            "employment_type": "full-time",
+            "salary_range": "$140k-$180k",
+            "status": "open",
+            "job_description": "Build Python platforms with PostgreSQL, Kafka, and observability tooling.",
+            "required_skills": ["python", "postgresql", "kafka"],
+            "preferred_skills": ["observability"],
+        },
+    )
+    assert job.status_code == 200
+    job_id = job.json()["id"]
+
+    upload = client.post(
+        "/api/v1/candidates/upload-resume",
+        headers=headers,
+        files={"file": ("resume.txt", b"Casey Platform\ncasey@example.com\nPlatform Engineer\nPython PostgreSQL Kafka observability\n", "text/plain")},
+        data={"name": "Casey Platform", "email": "casey@example.com", "location": "Remote"},
+    )
+    assert upload.status_code == 200
+    candidate_id = upload.json()["candidate"]["id"]
+
+    match = client.post(f"/api/v1/candidates/{candidate_id}/match-job/{job_id}", headers=headers)
+    assert match.status_code == 200
+
+    invite = client.post(
+        "/api/v1/interviews/invite",
+        headers=headers,
+        json={
+            "candidate_id": candidate_id,
+            "job_id": job_id,
+            "interview_type": "Technical screening",
+            "mode": "text",
+        },
+    )
+    assert invite.status_code == 200
+    interview_id = invite.json()["id"]
+
+    start = client.post(f"/api/v1/interviews/{interview_id}/start", json={"consent_given": True})
+    assert start.status_code == 200
+
+    question = client.get(f"/api/v1/interviews/{interview_id}/next-question")
+    assert question.status_code == 200
+    question_id = question.json()["id"]
+
+    answer = client.post(
+        f"/api/v1/interviews/{interview_id}/answers",
+        json={
+            "question_id": question_id,
+            "answer_text": "I have led Python and Kafka platform work with strong production instrumentation.",
+            "answer_mode": "text",
+            "latency_ms": 18000,
+        },
+    )
+    assert answer.status_code == 200
+
+    report = client.post(f"/api/v1/interviews/{interview_id}/complete")
+    assert report.status_code == 200
+
+    decision = client.post(
+        f"/api/v1/interviews/{interview_id}/decision",
+        headers=headers,
+        json={
+            "decision": "shortlisted",
+            "notes": "Strong systems depth, good fit for the next manager round.",
+            "override_ai_recommendation": True,
+        },
+    )
+    assert decision.status_code == 200
+
+    workspace = client.get(f"/api/v1/candidates/{candidate_id}/review-workspace/{job_id}", headers=headers)
+    assert workspace.status_code == 200
+    payload = workspace.json()
+    assert payload["latest_match"]["overall_score"] >= 0
+    assert payload["latest_interview"]["id"] == interview_id
+    assert payload["latest_report"]["recommended_next_step"]
+    assert payload["latest_decision"]["decision"] == "shortlisted"
+    assert payload["latest_decision"]["override_ai_recommendation"] is True
+    assert payload["decision_history"]
+    assert any(entry["action"] == "recruiter.decision_made" for entry in payload["audit_timeline"])
+
+
 def test_voice_interview_answer_accepts_transcript() -> None:
     client = TestClient(main_module.app)
     email = f"voice+{uuid4().hex[:8]}@hireos.ai"
@@ -579,3 +686,139 @@ def test_live_video_invite_auto_generates_google_meet_when_connected(monkeypatch
     assert invite.status_code == 200
     payload = invite.json()
     assert payload["share_links"]["candidate_join_url"] == "https://meet.google.com/generated-demo-link"
+    assert payload["share_links"]["meeting_setup_url"] == "https://meet.google.com/generated-demo-link"
+    assert payload["share_links"]["schedule_type"] == "scheduled"
+
+
+def test_ranking_simulator_reorders_candidates_when_weights_change() -> None:
+    client = TestClient(main_module.app)
+    email = f"simrank+{uuid4().hex[:8]}@hireos.ai"
+    company = f"Sim Rank Co {uuid4().hex[:6]}"
+    signup = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "full_name": "Simulator Recruiter",
+            "email": email,
+            "password": "Demo@123",
+            "company_name": company,
+            "role": "admin",
+        },
+    )
+    assert signup.status_code == 200
+    token = signup.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    job = client.post(
+        "/api/v1/jobs",
+        headers=headers,
+        json={
+            "title": "Data Platform Engineer",
+            "department": "Data",
+            "location": "Remote",
+            "work_mode": "remote",
+            "experience_range": "4-8 years",
+            "employment_type": "full-time",
+            "salary_range": "$135k-$170k",
+            "status": "open",
+            "job_description": "Build Python, SQL, Kafka, Airflow, and PostgreSQL data systems.",
+            "required_skills": ["python", "sql", "kafka", "airflow", "postgresql"],
+            "preferred_skills": ["spark"],
+        },
+    )
+    assert job.status_code == 200
+    job_id = job.json()["id"]
+
+    candidates = [
+        (
+            "Morgan Match",
+            "morgan@example.com",
+            b"Morgan Match\nData Engineer\nPython SQL Kafka Airflow PostgreSQL Spark.\n",
+            "I have built reliable data pipelines and can explain schema evolution clearly.",
+        ),
+        (
+            "Ivy Interview",
+            "ivy@example.com",
+            b"Ivy Interview\nAnalytics Engineer\nPython SQL PostgreSQL.\n",
+            "I design systems end to end, explain trade-offs well, mentor engineers, and reason deeply about latency, retries, and stakeholder communication.",
+        ),
+    ]
+
+    interview_ids: dict[str, str] = {}
+
+    for name, candidate_email, resume_text, answer_text in candidates:
+        upload = client.post(
+            "/api/v1/candidates/upload-resume",
+            headers=headers,
+            files={"file": ("resume.txt", resume_text, "text/plain")},
+            data={"name": name, "email": candidate_email, "location": "Remote"},
+        )
+        assert upload.status_code == 200
+        candidate_id = upload.json()["candidate"]["id"]
+
+        match = client.post(f"/api/v1/candidates/{candidate_id}/match-job/{job_id}", headers=headers)
+        assert match.status_code == 200
+
+        invite = client.post(
+            "/api/v1/interviews/invite",
+            headers=headers,
+            json={
+                "candidate_id": candidate_id,
+                "job_id": job_id,
+                "interview_type": "Technical screening",
+                "mode": "text",
+            },
+        )
+        assert invite.status_code == 200
+        interview_id = invite.json()["id"]
+        interview_ids[name] = interview_id
+
+        start = client.post(f"/api/v1/interviews/{interview_id}/start", json={"consent_given": True})
+        assert start.status_code == 200
+
+        question = client.get(f"/api/v1/interviews/{interview_id}/next-question")
+        assert question.status_code == 200
+        question_id = question.json()["id"]
+
+        answer = client.post(
+            f"/api/v1/interviews/{interview_id}/answers",
+            json={
+                "question_id": question_id,
+                "answer_text": answer_text,
+                "answer_mode": "text",
+                "latency_ms": 15000,
+            },
+        )
+        assert answer.status_code == 200
+
+    baseline = client.get(f"/api/v1/jobs/{job_id}/ranking", headers=headers)
+    assert baseline.status_code == 200
+    baseline_payload = baseline.json()
+    assert baseline_payload[0]["candidate_name"] == "Morgan Match"
+
+    decision = client.post(
+        f"/api/v1/interviews/{interview_ids['Ivy Interview']}/decision",
+        headers=headers,
+        json={
+            "decision": "shortlisted",
+            "notes": "Promising communicator worth advancing despite missing skills.",
+            "override_ai_recommendation": True,
+        },
+    )
+    assert decision.status_code == 200
+
+    simulation = client.post(
+        f"/api/v1/jobs/{job_id}/ranking/simulate",
+        headers=headers,
+        json={
+            "resume_weight": 15,
+            "interview_weight": 85,
+            "missing_skill_penalty": 1,
+            "human_review_penalty": 0,
+            "shortlist_boost": 20,
+        },
+    )
+    assert simulation.status_code == 200
+    payload = simulation.json()
+    assert payload["candidates"][0]["candidate_name"] == "Ivy Interview"
+    assert payload["candidates"][0]["rank_change"] > 0
+    assert payload["summary"]

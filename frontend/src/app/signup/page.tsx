@@ -23,7 +23,7 @@ export default function SignupPage() {
   const mutation = useMutation({
     mutationFn: api.signup,
     onSuccess: (data) => {
-      persistSession(data.user);
+      persistSession(data.user, data.access_token);
       startTransition(() => router.push("/dashboard"));
     },
   });

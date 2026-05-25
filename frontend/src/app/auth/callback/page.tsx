@@ -22,7 +22,7 @@ export default function AuthCallbackPage() {
   const exchangeMutation = useMutation({
     mutationFn: (exchangeCode: string) => api.exchangeGoogleAuth({ code: exchangeCode }),
     onSuccess: (data) => {
-      persistSession(data.user);
+      persistSession(data.user, data.access_token);
       startTransition(() => router.replace("/dashboard"));
     },
     onError: () => {
