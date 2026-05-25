@@ -1,0 +1,4 @@
+Rhea Notify
+rhea@example.com
+Backend Engineer
+Python FastAPI PostgreSQL

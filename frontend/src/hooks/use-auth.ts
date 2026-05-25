@@ -46,7 +46,7 @@ function getSnapshot(): SessionSnapshot {
 
   const userRaw = localStorage.getItem(USER_KEY);
   const tokenRaw = sessionStorage.getItem(TOKEN_KEY);
-  if (userRaw === lastUserRaw && tokenRaw === lastTokenRaw && lastSnapshot.hydrated) {
+  if (userRaw === lastUserRaw && tokenRaw === lastTokenRaw) {
     return lastSnapshot;
   }
 
@@ -77,8 +77,8 @@ function subscribe(callback: () => void) {
 
 export function persistSession(user: User, token?: string | null) {
   localStorage.setItem(USER_KEY, JSON.stringify(user));
-  const existingToken = typeof window !== "undefined" ? sessionStorage.getItem(TOKEN_KEY) : null;
-  const nextToken = token ?? existingToken;
+  const currentToken = typeof window !== "undefined" ? sessionStorage.getItem(TOKEN_KEY) : null;
+  const nextToken = token ?? currentToken;
   if (typeof window !== "undefined") {
     if (nextToken) {
       sessionStorage.setItem(TOKEN_KEY, nextToken);

@@ -54,6 +54,15 @@ flowchart LR
 
 1. Copy `.env.example` to `.env`
    - if you want Google sign-in or Google Meet auto-scheduling, also set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_AUTH_REDIRECT_URI`, and `GOOGLE_OAUTH_REDIRECT_URI`
+   - if you want HireOS to send interview emails directly instead of only opening a `mailto:` draft, also set:
+     - `SMTP_HOST`
+     - `SMTP_PORT`
+     - `SMTP_USERNAME`
+     - `SMTP_PASSWORD`
+     - `SMTP_FROM_EMAIL`
+     - `SMTP_FROM_NAME`
+     - `SMTP_USE_TLS`
+   - if SMTP is left blank, HireOS still works and writes fallback invite payloads to `data/email_outbox/` for local demo use
 2. Quick start in one command:
    - `bash scripts/run_everything.sh`
    - or `make run-all`
@@ -73,6 +82,20 @@ flowchart LR
 6. Login with `recruiter1@hireos.ai / Demo@123`
 
 Docker users can use `make up`, but Docker was not available in the build environment used for validation here, so Compose is included but not executed in this session.
+
+### SMTP example
+
+```env
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USERNAME=apikey-or-username
+SMTP_PASSWORD=super-secret-password
+SMTP_FROM_EMAIL=noreply@yourcompany.com
+SMTP_FROM_NAME=HireOS AI
+SMTP_USE_TLS=true
+```
+
+Use these when you want the `Send with HireOS` button on the candidate invite screen to deliver real emails through your mail provider.
 
 ## Demo flow
 

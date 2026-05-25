@@ -4,6 +4,8 @@
 
 1. Copy `.env.example` to `.env`
    - to enable Google sign-in and Google Meet integration, fill in `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_AUTH_REDIRECT_URI`, and `GOOGLE_OAUTH_REDIRECT_URI`
+   - to enable HireOS-delivered interview invite emails, fill in `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`, and `SMTP_USE_TLS`
+   - if SMTP is not configured, HireOS falls back to writing invite payloads to `data/email_outbox/` for local testing
 2. One command:
    - `bash scripts/run_everything.sh`
    - or `make run-all`

@@ -20,6 +20,17 @@ class Settings(BaseSettings):
     session_cookie_name: str = "hireos_session"
     session_cookie_secure: bool = False
     session_cookie_samesite: str = "lax"
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from_email: str = "noreply@hireos.local"
+    smtp_from_name: str = "HireOS AI"
+    smtp_use_tls: bool = True
+    interview_invite_reminder_after_hours: int = 24
+    interview_incomplete_reminder_after_hours: int = 6
+    interview_reminder_cooldown_hours: int = 12
+    interview_reminder_max_attempts: int = 2
     llm_provider: str = "mock"
     openai_api_key: str | None = None
     google_client_id: str | None = None
@@ -45,10 +56,12 @@ class Settings(BaseSettings):
     )
     uploads_dir: Path = ROOT_DIR / "backend" / "uploads"
     events_dir: Path = ROOT_DIR / "data" / "events"
+    email_outbox_dir: Path = ROOT_DIR / "data" / "email_outbox"
     lakehouse_dir: Path = ROOT_DIR / "data" / "lakehouse"
 
 
 settings = Settings()
 settings.uploads_dir.mkdir(parents=True, exist_ok=True)
 settings.events_dir.mkdir(parents=True, exist_ok=True)
+settings.email_outbox_dir.mkdir(parents=True, exist_ok=True)
 settings.lakehouse_dir.mkdir(parents=True, exist_ok=True)

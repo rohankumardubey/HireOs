@@ -1,0 +1,11 @@
+{
+  "delivery_id": "fd805e58-9c6e-41f5-9db1-00aae003620e",
+  "recipient_email": "omar@example.com",
+  "subject": "Reminder: finish your HireOS interview for Analytics Engineer",
+  "body_text": "Hi Omar Partial,\n\nYou started your HireOS interview for the Analytics Engineer role but have not completed it yet.\n\nResume where you left off: http://localhost:3000/interview/ed19c28e-e3ed-441c-acc3-3c7ffe8fa509\n\nPlease finish the interview when you can, or reply to the recruiter if you need help.\n\nBest,\nHireOS AI Recruiting",
+  "metadata": {
+    "reminder_reason": "Candidate started the interview but has not completed it.",
+    "job_title": "Analytics Engineer",
+    "last_activity_at": "2026-05-25T15:02:02.847039+00:00"
+  }
+}
