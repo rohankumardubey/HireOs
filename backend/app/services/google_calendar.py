@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.models import Company
+from app.services.secret_crypto import SecretCryptoService
 
 
 class GoogleCalendarIntegrationService:
@@ -24,6 +25,9 @@ class GoogleCalendarIntegrationService:
       "email",
       "https://www.googleapis.com/auth/calendar.events",
     ]
+
+    def __init__(self) -> None:
+        self.secret_crypto = SecretCryptoService()
 
     def is_configured(self) -> bool:
         return bool(settings.google_client_id and settings.google_client_secret and settings.google_oauth_redirect_uri)
@@ -55,8 +59,9 @@ class GoogleCalendarIntegrationService:
             {
                 "connected": True,
                 "email": profile.get("email"),
-                "access_token": token_data["access_token"],
-                "refresh_token": token_data.get("refresh_token") or google_settings.get("refresh_token"),
+                "access_token": self.secret_crypto.encrypt(token_data["access_token"]),
+                "refresh_token": self.secret_crypto.encrypt(token_data.get("refresh_token"))
+                or google_settings.get("refresh_token"),
                 "token_type": token_data.get("token_type", "Bearer"),
                 "scope": token_data.get("scope"),
                 "expires_at": (
@@ -186,9 +191,9 @@ class GoogleCalendarIntegrationService:
 
     def _valid_access_token(self, db: Session, company: Company) -> str:
         google_settings = self._google_settings(company)
-        access_token = google_settings.get("access_token")
+        access_token = self.secret_crypto.decrypt(google_settings.get("access_token"))
         expires_at = google_settings.get("expires_at")
-        refresh_token = google_settings.get("refresh_token")
+        refresh_token = self.secret_crypto.decrypt(google_settings.get("refresh_token"))
 
         if access_token and expires_at:
             expires_dt = datetime.fromisoformat(expires_at)
@@ -201,7 +206,7 @@ class GoogleCalendarIntegrationService:
         refreshed = self._refresh_access_token(refresh_token)
         google_settings.update(
             {
-                "access_token": refreshed["access_token"],
+                "access_token": self.secret_crypto.encrypt(refreshed["access_token"]),
                 "token_type": refreshed.get("token_type", "Bearer"),
                 "scope": refreshed.get("scope"),
                 "expires_at": (

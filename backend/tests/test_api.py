@@ -11,9 +11,10 @@ from fastapi.testclient import TestClient
 
 import app.main as main_module
 from app.api.routes import auth as auth_route
+from app.api.routes import integrations as integrations_route
 from app.api.routes import interviews as interviews_route
 import app.services.ats_webhooks as ats_webhooks_service
-from app.db.models import Interview
+from app.db.models import Company, Interview
 from app.db.session import SessionLocal, engine, init_db
 
 
@@ -45,6 +46,61 @@ def test_signup_and_login() -> None:
     me = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 200
     assert me.json()["email"] == unique_email
+
+
+def test_company_settings_patch_encrypts_sensitive_provider_fields() -> None:
+    client = TestClient(main_module.app)
+    unique_email = f"settings+{uuid4().hex[:8]}@hireos.ai"
+    unique_company = f"Settings Co {uuid4().hex[:6]}"
+    signup = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "full_name": "Settings Admin",
+            "email": unique_email,
+            "password": "Demo@123",
+            "company_name": unique_company,
+            "role": "admin",
+        },
+    )
+    assert signup.status_code == 200
+    token = signup.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    company_response = client.get("/api/v1/companies/me", headers=headers)
+    assert company_response.status_code == 200
+    company_id = company_response.json()["id"]
+
+    update = client.patch(
+        "/api/v1/companies/me",
+        headers=headers,
+        json={
+            "settings_json": {
+                "integrations": {
+                    "google": {
+                        "access_token": "raw-google-access",
+                        "refresh_token": "raw-google-refresh",
+                    },
+                    "ats_webhook": {
+                        "auth_token": "raw-ats-token",
+                        "signing_secret": "raw-ats-secret",
+                    },
+                }
+            }
+        },
+    )
+    assert update.status_code == 200
+    serialized = json.dumps(update.json()["settings_json"])
+    assert "raw-google-access" not in serialized
+    assert "raw-ats-token" not in serialized
+
+    with SessionLocal() as db:
+        company = db.get(Company, company_id)
+        assert company is not None
+        settings_json = company.settings_json["integrations"]
+        assert settings_json["google"]["access_token"].startswith("enc:v1:")
+        assert settings_json["google"]["refresh_token"].startswith("enc:v1:")
+        assert settings_json["ats_webhook"]["auth_token"].startswith("enc:v1:")
+        assert settings_json["ats_webhook"]["signing_secret"].startswith("enc:v1:")
 
 
 def test_google_auth_start_returns_authorization_url(monkeypatch) -> None:
@@ -144,6 +200,74 @@ def test_google_auth_callback_logs_in_existing_user(monkeypatch) -> None:
     exchange = client.post("/api/v1/auth/google/exchange", json={"code": params["code"][0]})
     assert exchange.status_code == 200
     assert exchange.json()["user"]["email"] == existing_email
+
+
+def test_google_calendar_tokens_are_encrypted_at_rest(monkeypatch) -> None:
+    client = TestClient(main_module.app)
+    email = f"calendar+{uuid4().hex[:8]}@hireos.ai"
+    company_name = f"Calendar Co {uuid4().hex[:6]}"
+    signup = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "full_name": "Calendar Admin",
+            "email": email,
+            "password": "Demo@123",
+            "company_name": company_name,
+            "role": "admin",
+        },
+    )
+    assert signup.status_code == 200
+    token = signup.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    company_response = client.get("/api/v1/companies/me", headers=headers)
+    assert company_response.status_code == 200
+    company_id = company_response.json()["id"]
+
+    monkeypatch.setattr(integrations_route.google, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        integrations_route.google,
+        "_exchange_code_for_tokens",
+        lambda code: {
+            "access_token": "google-calendar-access-token",
+            "refresh_token": "google-calendar-refresh-token",
+            "token_type": "Bearer",
+            "scope": "openid email https://www.googleapis.com/auth/calendar.events",
+            "expires_in": 3600,
+        },
+    )
+    monkeypatch.setattr(
+        integrations_route.google,
+        "_fetch_profile",
+        lambda access_token: {"email": "calendar.owner@example.com", "name": "Calendar Owner"},
+    )
+
+    state = integrations_route.google._sign_state(
+        {
+            "company_id": company_id,
+            "user_id": signup.json()["user"]["id"],
+            "ts": datetime.now(UTC).timestamp(),
+        }
+    )
+    callback = client.get(
+        f"/api/v1/integrations/google/callback?code=demo-google-code&state={state}",
+        follow_redirects=False,
+    )
+    assert callback.status_code == 302
+
+    status = client.get("/api/v1/integrations/google/status", headers=headers)
+    assert status.status_code == 200
+    assert status.json()["connected"] is True
+    assert status.json()["email"] == "calendar.owner@example.com"
+
+    with SessionLocal() as db:
+        company = db.get(Company, company_id)
+        assert company is not None
+        google_settings = company.settings_json["integrations"]["google"]
+        assert google_settings["access_token"].startswith("enc:v1:")
+        assert google_settings["refresh_token"].startswith("enc:v1:")
+        assert google_settings["access_token"] != "google-calendar-access-token"
+        assert google_settings["refresh_token"] != "google-calendar-refresh-token"
 
 
 def test_copilot_query_returns_evidence() -> None:
@@ -1058,6 +1182,16 @@ def test_ats_webhook_export_flows_from_recruiter_decision(monkeypatch) -> None:
     company_response = client.get("/api/v1/companies/me", headers=headers)
     assert company_response.status_code == 200
     assert "auth_token" not in json.dumps(company_response.json()["settings_json"])
+    company_id = company_response.json()["id"]
+
+    with SessionLocal() as db:
+        company = db.get(Company, company_id)
+        assert company is not None
+        ats_settings = company.settings_json["integrations"]["ats_webhook"]
+        assert ats_settings["auth_token"].startswith("enc:v1:")
+        assert ats_settings["signing_secret"].startswith("enc:v1:")
+        assert ats_settings["auth_token"] != "ats-token"
+        assert ats_settings["signing_secret"] != "signing-secret"
 
     test_delivery = client.post("/api/v1/integrations/ats-webhook/test", headers=headers)
     assert test_delivery.status_code == 200

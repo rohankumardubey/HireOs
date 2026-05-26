@@ -7,7 +7,7 @@ from app.db.models import Company
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user, get_primary_membership
 from app.schemas import CompanyRead, CompanyUpdate
-from app.services.company_settings import sanitize_company_settings
+from app.services.company_settings import protect_company_settings, sanitize_company_settings
 
 router = APIRouter(prefix="/companies", tags=["companies"])
 
@@ -25,6 +25,8 @@ def update_my_company(payload: CompanyUpdate, current_user=Depends(get_current_u
     membership = get_primary_membership(current_user, db)
     company = db.get(Company, membership.company_id)
     for field, value in payload.model_dump(exclude_none=True).items():
+        if field == "settings_json":
+            value = protect_company_settings(value)
         setattr(company, field, value)
     db.commit()
     db.refresh(company)

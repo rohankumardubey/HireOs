@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     public_app_url: str = "http://localhost:3000"
     database_url: str = "sqlite:///./hireos.db"
     jwt_secret: str = "change-me"
+    field_encryption_key: str | None = None
     access_token_expire_minutes: int = 60 * 24
     session_cookie_name: str = "hireos_session"
     session_cookie_secure: bool = False
