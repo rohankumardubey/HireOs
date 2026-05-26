@@ -27,14 +27,14 @@ class CandidateReviewWorkspaceService:
             select(CandidateJobMatch)
             .where(CandidateJobMatch.candidate_id == candidate_id, CandidateJobMatch.job_id == job_id)
             .order_by(CandidateJobMatch.created_at.desc())
-        ).scalar_one_or_none()
+        ).scalars().first()
 
         interview = db.execute(
             select(Interview)
             .options(selectinload(Interview.report))
             .where(Interview.candidate_id == candidate_id, Interview.job_id == job_id)
             .order_by(Interview.created_at.desc())
-        ).scalar_one_or_none()
+        ).scalars().first()
 
         decision_rows = db.execute(
             select(RecruiterDecision, User.full_name)

@@ -1,0 +1,12 @@
+{
+  "delivery_id": "fb6f7736-9e78-4c85-9b36-000f809b4b44",
+  "recipient_email": "rhea@example.com",
+  "subject": "HireOS AI interview invitation for Backend Engineer",
+  "body_text": "Hi Rhea Notify,\n\nYou have been invited to the HireOS AI interview flow for the Backend Engineer role.\n\nCandidate interview link: http://localhost:3000/interview/588cfb42-a5c3-417c-8847-fd6f4029e6a7\nGoogle Calendar event draft: https://calendar.google.com/calendar/render?action=TEMPLATE&text=HireOS%20AI%20interview%20-%20Backend%20Engineer&details=Candidate%20portal%20link%3A%20http%3A%2F%2Flocalhost%3A3000%2Finterview%2F588cfb42-a5c3-417c-8847-fd6f4029e6a7%0A%0ARecruiter%20note%3A%20AI-generated%20interview%20scores%20are%20decision-support%20signals%20and%20should%20be%20reviewed%20by%20a%20human%20recruiter.&add=rhea%40example.com\nThe recruiter can save that event and send the calendar invite to you.\n\nPlease reply if you need a different time or accommodation.\n\nBest,\nHireOS AI Recruiting",
+  "metadata": {
+    "job_title": "Backend Engineer",
+    "candidate_portal_url": "http://localhost:3000/interview/588cfb42-a5c3-417c-8847-fd6f4029e6a7",
+    "mode": "text",
+    "meeting_provider": "google_meet"
+  }
+}

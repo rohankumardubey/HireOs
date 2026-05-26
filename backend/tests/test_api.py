@@ -647,6 +647,89 @@ def test_candidate_review_workspace_includes_decision_history_and_timeline() -> 
     assert any(entry["action"] == "recruiter.decision_made" for entry in payload["audit_timeline"])
 
 
+def test_candidate_review_workspace_handles_multiple_interviews_for_same_job() -> None:
+    client = TestClient(main_module.app)
+    email = f"workspace-multi+{uuid4().hex[:8]}@hireos.ai"
+    company = f"Workspace Multi Co {uuid4().hex[:6]}"
+    signup = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "full_name": "Workspace Recruiter",
+            "email": email,
+            "password": "Demo@123",
+            "company_name": company,
+            "role": "admin",
+        },
+    )
+    assert signup.status_code == 200
+    token = signup.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    job = client.post(
+        "/api/v1/jobs",
+        headers=headers,
+        json={
+            "title": "Backend Engineer",
+            "department": "Engineering",
+            "location": "Remote",
+            "work_mode": "remote",
+            "experience_range": "3-6 years",
+            "employment_type": "full-time",
+            "salary_range": "$120k-$145k",
+            "status": "open",
+            "job_description": "Build APIs with Python, FastAPI, and PostgreSQL.",
+            "required_skills": ["python", "fastapi", "postgresql"],
+            "preferred_skills": ["redis"],
+        },
+    )
+    assert job.status_code == 200
+    job_id = job.json()["id"]
+
+    upload = client.post(
+        "/api/v1/candidates/upload-resume",
+        headers=headers,
+        files={"file": ("resume.txt", b"Riley Repeat\nriley@example.com\nPython FastAPI PostgreSQL.\n", "text/plain")},
+        data={"name": "Riley Repeat", "email": "riley@example.com", "location": "Remote"},
+    )
+    assert upload.status_code == 200
+    candidate_id = upload.json()["candidate"]["id"]
+
+    match = client.post(f"/api/v1/candidates/{candidate_id}/match-job/{job_id}", headers=headers)
+    assert match.status_code == 200
+
+    first_invite = client.post(
+        "/api/v1/interviews/invite",
+        headers=headers,
+        json={
+            "candidate_id": candidate_id,
+            "job_id": job_id,
+            "interview_type": "Technical screening",
+            "mode": "text",
+        },
+    )
+    assert first_invite.status_code == 200
+
+    second_invite = client.post(
+        "/api/v1/interviews/invite",
+        headers=headers,
+        json={
+            "candidate_id": candidate_id,
+            "job_id": job_id,
+            "interview_type": "Technical screening",
+            "mode": "video",
+            "meeting_provider": "google_meet",
+            "meeting_join_url": "https://meet.google.com/demo-link",
+        },
+    )
+    assert second_invite.status_code == 200
+
+    workspace = client.get(f"/api/v1/candidates/{candidate_id}/review-workspace/{job_id}", headers=headers)
+    assert workspace.status_code == 200
+    payload = workspace.json()
+    assert payload["latest_interview"]["id"] == second_invite.json()["id"]
+    assert payload["latest_interview"]["mode"] == "video"
+
+
 def test_voice_interview_answer_accepts_transcript() -> None:
     client = TestClient(main_module.app)
     email = f"voice+{uuid4().hex[:8]}@hireos.ai"
