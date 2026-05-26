@@ -56,6 +56,7 @@ flowchart LR
 1. Copy `.env.example` to `.env`
    - for production, set `FIELD_ENCRYPTION_KEY` so provider refresh tokens, access tokens, webhook bearer tokens, and signing secrets are encrypted at rest with a dedicated key
    - if you want Google sign-in or Google Meet auto-scheduling, also set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_AUTH_REDIRECT_URI`, and `GOOGLE_OAUTH_REDIRECT_URI`
+   - if you want Zoom auto-scheduling with real meeting creation, also set `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`, and `ZOOM_OAUTH_REDIRECT_URI`
    - if you want HireOS to send interview emails directly instead of only opening a `mailto:` draft, also set:
      - `SMTP_HOST`
      - `SMTP_PORT`
@@ -132,6 +133,24 @@ Operational notes:
 - For local dev, if `FIELD_ENCRYPTION_KEY` is blank, HireOS derives encryption from `JWT_SECRET`
 - For production, always set a dedicated `FIELD_ENCRYPTION_KEY`
 - If you change `FIELD_ENCRYPTION_KEY`, reconnect Google and re-enter ATS secrets unless you run a re-encryption migration
+
+### Live meeting auto-scheduling
+
+1. Add Google and/or Zoom OAuth settings in `.env`
+2. Start HireOS and open `/settings`
+3. Connect `Google Meet integration` if you want HireOS to create Calendar events with Meet links
+4. Connect `Zoom integration` if you want HireOS to create real Zoom meetings automatically
+5. Open a candidate
+6. Choose `Video interview`
+7. Choose `Google Meet` or `Zoom`
+8. Leave `Live meeting join URL` blank to let HireOS auto-create the meeting
+9. Choose `Ad hoc now` or `Scheduled for later`
+10. Click `Invite to interview`
+
+What happens:
+- `Google Meet`: HireOS creates a Calendar event with conference data and stores the returned Meet join URL
+- `Zoom`: HireOS creates a real Zoom meeting and stores the returned Zoom join URL
+- If no provider is connected, recruiters can still paste an existing meeting URL manually
 
 ## Demo flow
 

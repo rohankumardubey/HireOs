@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     google_client_secret: str | None = None
     google_auth_redirect_uri: str = "http://localhost:8000/api/v1/auth/google/callback"
     google_oauth_redirect_uri: str = "http://localhost:8000/api/v1/integrations/google/callback"
+    zoom_client_id: str | None = None
+    zoom_client_secret: str | None = None
+    zoom_oauth_redirect_uri: str = "http://localhost:8000/api/v1/integrations/zoom/callback"
     ollama_base_url: str = "http://localhost:11434"
     qdrant_url: str = "http://localhost:6333"
     minio_endpoint: str = "localhost:9000"

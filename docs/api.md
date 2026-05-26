@@ -52,6 +52,9 @@ Base path: `/api/v1`
 - `GET /integrations/google/status`
 - `POST /integrations/google/connect`
 - `DELETE /integrations/google`
+- `GET /integrations/zoom/status`
+- `POST /integrations/zoom/connect`
+- `DELETE /integrations/zoom`
 - `GET /integrations/ats-webhook/status`
 - `PATCH /integrations/ats-webhook`
 - `POST /integrations/ats-webhook/test`

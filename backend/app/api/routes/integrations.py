@@ -17,13 +17,16 @@ from app.schemas import (
     GoogleConnectResponse,
     GoogleIntegrationStatus,
     WebhookDeliveryRead,
+    ZoomIntegrationStatus,
 )
 from app.services.ats_webhooks import ATSWebhookExportService
 from app.services.google_calendar import GoogleCalendarIntegrationService
+from app.services.zoom_calendar import ZoomCalendarIntegrationService
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 google = GoogleCalendarIntegrationService()
 ats_webhooks = ATSWebhookExportService()
+zoom = ZoomCalendarIntegrationService()
 
 
 @router.get("/google/status", response_model=GoogleIntegrationStatus)
@@ -64,6 +67,47 @@ def google_callback(code: str = Query(...), state: str = Query(...), db: Session
         params = urlencode({"google": "connected", "email": result.get("email", "")})
     except Exception as exc:
         params = urlencode({"google": "error", "message": str(exc)})
+    return RedirectResponse(url=f"{settings.public_app_url.rstrip('/')}/settings?{params}", status_code=302)
+
+
+@router.get("/zoom/status", response_model=ZoomIntegrationStatus)
+def zoom_status(current_user=Depends(get_current_user), db: Session = Depends(get_db)) -> ZoomIntegrationStatus:
+    membership = get_primary_membership(current_user, db)
+    company = db.get(Company, membership.company_id)
+    return ZoomIntegrationStatus(**zoom.status(company))
+
+
+@router.post("/zoom/connect", response_model=GoogleConnectResponse)
+def connect_zoom(
+    current_user=Depends(require_roles("admin", "recruiter")),
+    db: Session = Depends(get_db),
+) -> GoogleConnectResponse:
+    if not zoom.is_configured():
+        raise HTTPException(status_code=400, detail="Zoom OAuth is not configured on this environment")
+    membership = get_primary_membership(current_user, db)
+    return GoogleConnectResponse(
+        authorization_url=zoom.build_auth_url(company_id=membership.company_id, user_id=current_user.id)
+    )
+
+
+@router.delete("/zoom")
+def disconnect_zoom(
+    current_user=Depends(require_roles("admin", "recruiter")),
+    db: Session = Depends(get_db),
+) -> dict:
+    membership = get_primary_membership(current_user, db)
+    company = db.get(Company, membership.company_id)
+    zoom.disconnect(db, company)
+    return {"status": "disconnected"}
+
+
+@router.get("/zoom/callback")
+def zoom_callback(code: str = Query(...), state: str = Query(...), db: Session = Depends(get_db)) -> RedirectResponse:
+    try:
+        result = zoom.complete_oauth(db, code=code, state=state)
+        params = urlencode({"zoom": "connected", "email": result.get("email", "")})
+    except Exception as exc:
+        params = urlencode({"zoom": "error", "message": str(exc)})
     return RedirectResponse(url=f"{settings.public_app_url.rstrip('/')}/settings?{params}", status_code=302)
 
 

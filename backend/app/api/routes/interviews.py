@@ -48,6 +48,7 @@ from app.services.google_calendar import GoogleCalendarIntegrationService
 from app.services.interview_invites import InterviewInviteLinkBuilder
 from app.services.interview_reminders import InterviewReminderAutomationService
 from app.services.scoring import HiringIntelligenceService
+from app.services.zoom_calendar import ZoomCalendarIntegrationService
 
 router = APIRouter(prefix="/interviews", tags=["interviews"])
 events = EventPublisher()
@@ -57,6 +58,7 @@ google_calendar = GoogleCalendarIntegrationService()
 email_delivery = InterviewEmailDeliveryService()
 reminder_automation = InterviewReminderAutomationService()
 ats_webhooks = ATSWebhookExportService()
+zoom_calendar = ZoomCalendarIntegrationService()
 
 
 @router.post("/invite", response_model=InterviewInviteResponse)
@@ -67,8 +69,6 @@ def invite_candidate(
 ) -> InterviewInviteResponse:
     if payload.mode == "video" and payload.schedule_type == "scheduled" and not payload.scheduled_at:
         raise HTTPException(status_code=400, detail="Scheduled live interviews require a scheduled time")
-    if payload.mode == "video" and payload.meeting_provider == "zoom" and not payload.meeting_join_url:
-        raise HTTPException(status_code=400, detail="Live video interviews require a valid meeting join URL")
     candidate = db.execute(select(Candidate).options(selectinload(Candidate.skills)).where(Candidate.id == payload.candidate_id)).scalar_one_or_none()
     job = db.execute(select(Job).options(selectinload(Job.skills)).where(Job.id == payload.job_id)).scalar_one_or_none()
     if not candidate or not job:
@@ -114,6 +114,31 @@ def invite_candidate(
                 "calendar_event_id": event["calendar_event_id"],
                 "meeting_join_url": event["meeting_join_url"],
                 "scheduled_at": event["scheduled_at"],
+            }
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if payload.mode == "video" and payload.meeting_provider == "zoom" and not meeting_join_url:
+        if not zoom_calendar.is_configured():
+            raise HTTPException(status_code=400, detail="Zoom auto-generation is not configured. Connect Zoom or paste a join URL.")
+        try:
+            event = zoom_calendar.create_meeting(
+                db,
+                company=company,
+                candidate_email=candidate.email,
+                candidate_name=candidate.name,
+                recruiter_email=current_user.email,
+                job_title=job.title,
+                schedule_type=payload.schedule_type,
+                scheduled_at=payload.scheduled_at,
+                candidate_portal_url=candidate_portal_url,
+            )
+            meeting_join_url = event["meeting_join_url"]
+            interview.summary_json = {
+                **(interview.summary_json or {}),
+                "zoom_meeting_id": event["meeting_id"],
+                "meeting_join_url": event["meeting_join_url"],
+                "meeting_start_url": event.get("meeting_start_url"),
+                "scheduled_at": event.get("scheduled_at"),
             }
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
