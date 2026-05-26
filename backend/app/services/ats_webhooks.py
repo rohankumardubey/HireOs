@@ -23,10 +23,14 @@ from app.db.models import (
     WebhookDelivery,
     WebhookDeliveryStatus,
 )
+from app.services.secret_crypto import SecretCryptoService
 
 
 class ATSWebhookExportService:
     DEFAULT_EXPORT_STAGES = ["shortlisted", "moved_to_next_round", "hired"]
+
+    def __init__(self) -> None:
+        self.secret_crypto = SecretCryptoService()
 
     def status(self, company: Company) -> dict[str, Any]:
         config = self._settings(company)
@@ -62,14 +66,14 @@ class ATSWebhookExportService:
         if auth_token is not None:
             token = auth_token.strip()
             if token:
-                config["auth_token"] = token
+                config["auth_token"] = self.secret_crypto.encrypt(token)
             else:
                 config.pop("auth_token", None)
 
         if signing_secret is not None:
             secret = signing_secret.strip()
             if secret:
-                config["signing_secret"] = secret
+                config["signing_secret"] = self.secret_crypto.encrypt(secret)
             else:
                 config.pop("signing_secret", None)
 
@@ -220,8 +224,8 @@ class ATSWebhookExportService:
             "X-HireOS-Event": event_name,
             "X-HireOS-Delivery-Id": delivery.id,
         }
-        auth_token = config.get("auth_token")
-        signing_secret = config.get("signing_secret")
+        auth_token = self.secret_crypto.decrypt(config.get("auth_token"))
+        signing_secret = self.secret_crypto.decrypt(config.get("signing_secret"))
         if auth_token:
             headers["Authorization"] = f"Bearer {auth_token}"
         if signing_secret:

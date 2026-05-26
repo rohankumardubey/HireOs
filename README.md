@@ -54,6 +54,7 @@ flowchart LR
 ## Local demo
 
 1. Copy `.env.example` to `.env`
+   - for production, set `FIELD_ENCRYPTION_KEY` so provider refresh tokens, access tokens, webhook bearer tokens, and signing secrets are encrypted at rest with a dedicated key
    - if you want Google sign-in or Google Meet auto-scheduling, also set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_AUTH_REDIRECT_URI`, and `GOOGLE_OAUTH_REDIRECT_URI`
    - if you want HireOS to send interview emails directly instead of only opening a `mailto:` draft, also set:
      - `SMTP_HOST`
@@ -105,6 +106,32 @@ Use these when you want the `Send with HireOS` button on the candidate invite sc
 - Supported automatic export stages: `shortlisted`, `moved_to_next_round`, `hired`
 - HireOS signs webhook bodies with `X-HireOS-Signature` when you store a signing secret
 - Failed exports never block recruiter decisions; recruiters can retry from the candidate decision workspace
+
+### Secret storage
+
+- HireOS encrypts stored Google integration tokens and ATS webhook secrets before writing them into the database
+- Set `FIELD_ENCRYPTION_KEY` in production so encryption uses a dedicated secret instead of falling back to the app JWT secret
+- If you rotate `FIELD_ENCRYPTION_KEY`, previously stored provider secrets must be reconnected or re-entered unless you perform a controlled re-encryption migration
+
+### How to use encrypted provider secrets
+
+1. Add a strong `FIELD_ENCRYPTION_KEY` to `.env`
+2. Start the app with `bash scripts/run_everything.sh`
+3. Open `Settings`
+4. Configure either:
+   - `Google Meet integration` by connecting Google
+   - `ATS webhook export` by saving the endpoint URL and optional bearer token or signing secret
+5. Submit the integration settings normally from the UI
+
+What happens after save:
+- HireOS encrypts Google access tokens, Google refresh tokens, ATS bearer tokens, and ATS signing secrets before storing them in `companies.settings_json`
+- API responses only return connection status and `has_*` flags, not the raw secret values
+- Existing plaintext provider secrets remain readable for backward compatibility, and any updated values are rewritten encrypted
+
+Operational notes:
+- For local dev, if `FIELD_ENCRYPTION_KEY` is blank, HireOS derives encryption from `JWT_SECRET`
+- For production, always set a dedicated `FIELD_ENCRYPTION_KEY`
+- If you change `FIELD_ENCRYPTION_KEY`, reconnect Google and re-enter ATS secrets unless you run a re-encryption migration
 
 ## Demo flow
 
