@@ -270,6 +270,133 @@ def test_google_calendar_tokens_are_encrypted_at_rest(monkeypatch) -> None:
         assert google_settings["refresh_token"] != "google-calendar-refresh-token"
 
 
+def test_zoom_tokens_are_encrypted_and_video_invite_auto_creates_zoom_meeting(monkeypatch) -> None:
+    client = TestClient(main_module.app)
+    email = f"zoom+{uuid4().hex[:8]}@hireos.ai"
+    company_name = f"Zoom Co {uuid4().hex[:6]}"
+    signup = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "full_name": "Zoom Admin",
+            "email": email,
+            "password": "Demo@123",
+            "company_name": company_name,
+            "role": "admin",
+        },
+    )
+    assert signup.status_code == 200
+    token = signup.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    company_response = client.get("/api/v1/companies/me", headers=headers)
+    assert company_response.status_code == 200
+    company_id = company_response.json()["id"]
+
+    monkeypatch.setattr(integrations_route.zoom, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        integrations_route.zoom,
+        "_exchange_code_for_tokens",
+        lambda code: {
+            "access_token": "zoom-access-token",
+            "refresh_token": "zoom-refresh-token",
+            "token_type": "bearer",
+            "scope": "meeting:write user:read",
+            "expires_in": 3600,
+        },
+    )
+    monkeypatch.setattr(
+        integrations_route.zoom,
+        "_fetch_profile",
+        lambda access_token: {"id": "zoom-user-123", "email": "zoom.owner@example.com", "account_id": "acct-1"},
+    )
+
+    state = integrations_route.zoom._sign_state(
+        {
+            "company_id": company_id,
+            "user_id": signup.json()["user"]["id"],
+            "ts": datetime.now(UTC).timestamp(),
+        }
+    )
+    callback = client.get(
+        f"/api/v1/integrations/zoom/callback?code=demo-zoom-code&state={state}",
+        follow_redirects=False,
+    )
+    assert callback.status_code == 302
+
+    status = client.get("/api/v1/integrations/zoom/status", headers=headers)
+    assert status.status_code == 200
+    assert status.json()["connected"] is True
+    assert status.json()["email"] == "zoom.owner@example.com"
+
+    with SessionLocal() as db:
+        company = db.get(Company, company_id)
+        assert company is not None
+        zoom_settings = company.settings_json["integrations"]["zoom"]
+        assert zoom_settings["access_token"].startswith("enc:v1:")
+        assert zoom_settings["refresh_token"].startswith("enc:v1:")
+        assert zoom_settings["access_token"] != "zoom-access-token"
+        assert zoom_settings["refresh_token"] != "zoom-refresh-token"
+
+    monkeypatch.setattr(interviews_route.zoom_calendar, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        interviews_route.zoom_calendar,
+        "create_meeting",
+        lambda *args, **kwargs: {
+            "meeting_join_url": "https://zoom.us/j/9876543210",
+            "meeting_start_url": "https://zoom.us/s/9876543210?zak=demo",
+            "meeting_id": 9876543210,
+            "scheduled_at": kwargs["scheduled_at"].astimezone(UTC).isoformat() if kwargs.get("scheduled_at") else None,
+            "schedule_type": kwargs["schedule_type"],
+        },
+    )
+
+    job = client.post(
+        "/api/v1/jobs",
+        headers=headers,
+        json={
+            "title": "Platform Engineer",
+            "department": "Infrastructure",
+            "location": "Remote",
+            "work_mode": "remote",
+            "experience_range": "4-7 years",
+            "employment_type": "full-time",
+            "salary_range": "$140k-$180k",
+            "status": "open",
+            "job_description": "Build platforms with Python, APIs, and distributed systems.",
+            "required_skills": ["python", "apis"],
+            "preferred_skills": ["kafka"],
+        },
+    )
+    assert job.status_code == 200
+    job_id = job.json()["id"]
+
+    upload = client.post(
+        "/api/v1/candidates/upload-resume",
+        headers=headers,
+        files={"file": ("resume.txt", b"Avery Zoom\navery@example.com\nPython APIs distributed systems.\n", "text/plain")},
+        data={"name": "Avery Zoom", "email": "avery@example.com", "location": "Remote"},
+    )
+    assert upload.status_code == 200
+    candidate_id = upload.json()["candidate"]["id"]
+
+    invite = client.post(
+        "/api/v1/interviews/invite",
+        headers=headers,
+        json={
+            "candidate_id": candidate_id,
+            "job_id": job_id,
+            "interview_type": "Technical screening",
+            "mode": "video",
+            "meeting_provider": "zoom",
+            "schedule_type": "scheduled",
+            "scheduled_at": "2026-06-01T10:00:00Z",
+        },
+    )
+    assert invite.status_code == 200
+    assert invite.json()["share_links"]["candidate_join_url"] == "https://zoom.us/j/9876543210"
+    assert invite.json()["share_links"]["meeting_provider_label"] == "Zoom"
+
+
 def test_copilot_query_returns_evidence() -> None:
     client = TestClient(main_module.app)
     email = f"copilot+{uuid4().hex[:8]}@hireos.ai"

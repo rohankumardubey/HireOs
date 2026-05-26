@@ -464,6 +464,12 @@ class GoogleConnectResponse(BaseModel):
     authorization_url: str
 
 
+class ZoomIntegrationStatus(BaseModel):
+    configured: bool
+    connected: bool
+    email: EmailStr | None = None
+
+
 class ATSWebhookStatus(BaseModel):
     configured: bool
     enabled: bool

@@ -70,6 +70,11 @@ export default function CandidateDetailPage() {
     queryFn: () => api.getGoogleIntegrationStatus(auth.token as string),
     enabled: Boolean(auth.token),
   });
+  const zoomStatus = useQuery({
+    queryKey: ["zoom-status", auth.token],
+    queryFn: () => api.getZoomIntegrationStatus(auth.token as string),
+    enabled: Boolean(auth.token),
+  });
   const reviewWorkspace = useQuery({
     queryKey: ["candidate-review-workspace", auth.token, candidateId, selectedJobId],
     queryFn: () => api.getCandidateReviewWorkspace(auth.token as string, candidateId, selectedJobId),
@@ -143,7 +148,10 @@ export default function CandidateDetailPage() {
   const inviteDisabled =
     !selectedJobId ||
     inviteMutation.isPending ||
-    (interviewMode === "video" && meetingProvider === "zoom" && !meetingJoinUrl.trim()) ||
+    (interviewMode === "video" &&
+      meetingProvider === "zoom" &&
+      !zoomStatus.data?.connected &&
+      !meetingJoinUrl.trim()) ||
     (interviewMode === "video" &&
       meetingProvider === "google_meet" &&
       !googleStatus.data?.connected &&
@@ -281,7 +289,9 @@ export default function CandidateDetailPage() {
                   className="mt-2 w-full rounded-2xl border border-border bg-white/80 px-4 py-3 outline-none"
                   placeholder={
                     meetingProvider === "zoom"
-                      ? "https://zoom.us/j/..."
+                      ? zoomStatus.data?.connected
+                        ? "Auto-generated from connected Zoom account if left empty"
+                        : "https://zoom.us/j/..."
                       : googleStatus.data?.connected
                         ? "Auto-generated from connected Google account if left empty"
                         : "https://meet.google.com/..."
@@ -294,7 +304,9 @@ export default function CandidateDetailPage() {
                     ? googleStatus.data?.connected
                       ? "Because Google is connected, HireOS can auto-create a Meet link if you leave this blank. You can still paste an existing Meet URL if you already have one."
                       : "Connect Google in Settings to auto-generate a Meet link. Without that connection, paste an existing Meet URL here."
-                    : "Paste the real Zoom join link that the candidate should open. For scheduled interviews, add the meeting time above."}
+                    : zoomStatus.data?.connected
+                      ? "Because Zoom is connected, HireOS can auto-create a real Zoom meeting if you leave this blank. You can still paste an existing Zoom join link if you already have one."
+                      : "Connect Zoom in Settings to auto-generate a Zoom meeting. Without that connection, paste an existing Zoom join link here."}
                 </p>
               </label>
             ) : null}

@@ -14,6 +14,10 @@ def protect_company_settings(settings_json: dict | None) -> dict:
     if isinstance(google, dict):
         google["access_token"] = secret_crypto.encrypt(google.get("access_token"))
         google["refresh_token"] = secret_crypto.encrypt(google.get("refresh_token"))
+    zoom = data.get("integrations", {}).get("zoom")
+    if isinstance(zoom, dict):
+        zoom["access_token"] = secret_crypto.encrypt(zoom.get("access_token"))
+        zoom["refresh_token"] = secret_crypto.encrypt(zoom.get("refresh_token"))
     ats_webhook = data.get("integrations", {}).get("ats_webhook")
     if isinstance(ats_webhook, dict):
         ats_webhook["auth_token"] = secret_crypto.encrypt(ats_webhook.get("auth_token"))
@@ -30,6 +34,12 @@ def sanitize_company_settings(settings_json: dict | None) -> dict:
         google.pop("token_type", None)
         google.pop("id_token", None)
         google.pop("scope", None)
+    zoom = data.get("integrations", {}).get("zoom")
+    if isinstance(zoom, dict):
+        zoom.pop("access_token", None)
+        zoom.pop("refresh_token", None)
+        zoom.pop("token_type", None)
+        zoom.pop("scope", None)
     ats_webhook = data.get("integrations", {}).get("ats_webhook")
     if isinstance(ats_webhook, dict):
         ats_webhook.pop("auth_token", None)

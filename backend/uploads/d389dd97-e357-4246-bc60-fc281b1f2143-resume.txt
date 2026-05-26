@@ -1,0 +1,6 @@
+Taylor Backend
++taylor@example.com
++Senior Backend Engineer
++
++5 years building Python, FastAPI, PostgreSQL, Docker, and Redis services in production.
++

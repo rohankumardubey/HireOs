@@ -1,0 +1,2 @@
+Omar Partial
+SQL Python DBT

@@ -21,6 +21,11 @@ export default function SettingsPage() {
     queryFn: () => api.getGoogleIntegrationStatus(auth.token as string),
     enabled: Boolean(auth.token),
   });
+  const zoomStatus = useQuery({
+    queryKey: ["zoom-status", auth.token],
+    queryFn: () => api.getZoomIntegrationStatus(auth.token as string),
+    enabled: Boolean(auth.token),
+  });
   const atsStatus = useQuery({
     queryKey: ["ats-webhook-status", auth.token],
     queryFn: () => api.getATSWebhookStatus(auth.token as string),
@@ -54,6 +59,16 @@ export default function SettingsPage() {
   const disconnectGoogle = useMutation({
     mutationFn: () => api.disconnectGoogle(auth.token as string),
     onSuccess: () => googleStatus.refetch(),
+  });
+  const connectZoom = useMutation({
+    mutationFn: () => api.connectZoom(auth.token as string),
+    onSuccess: (result) => {
+      window.location.href = result.authorization_url;
+    },
+  });
+  const disconnectZoom = useMutation({
+    mutationFn: () => api.disconnectZoom(auth.token as string),
+    onSuccess: () => zoomStatus.refetch(),
   });
   const saveATSWebhook = useMutation({
     mutationFn: () =>
@@ -96,6 +111,13 @@ export default function SettingsPage() {
     }
     if (state === "error") {
       return callbackParams?.get("message") || "Google connection failed.";
+    }
+    const zoomState = callbackParams?.get("zoom");
+    if (zoomState === "connected") {
+      return `Zoom connected${callbackParams?.get("email") ? `: ${callbackParams.get("email")}` : ""}.`;
+    }
+    if (zoomState === "error") {
+      return callbackParams?.get("message") || "Zoom connection failed.";
     }
     return null;
   }, [callbackParams]);
@@ -208,6 +230,53 @@ export default function SettingsPage() {
             {!googleStatus.data?.configured ? (
               <p className="mt-4 text-sm leading-7 text-muted">
                 Add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_OAUTH_REDIRECT_URI` to your environment before connecting Google.
+              </p>
+            ) : null}
+          </Card>
+
+          <Card>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="font-display text-2xl font-semibold text-text">Zoom integration</h3>
+                <p className="mt-3 text-sm leading-7 text-muted">
+                  Connect a recruiter Zoom account so HireOS can create real Zoom meetings automatically for ad hoc and scheduled live interviews.
+                </p>
+              </div>
+              <Badge tone={zoomStatus.data?.connected ? "success" : "warning"}>
+                {zoomStatus.data?.connected ? "Connected" : "Not connected"}
+              </Badge>
+            </div>
+            <div className="mt-5 space-y-3 text-sm text-muted">
+              <div className="rounded-[20px] bg-white/70 px-4 py-3">
+                Configured on server: {zoomStatus.data?.configured ? "Yes" : "No"}
+              </div>
+              <div className="rounded-[20px] bg-white/70 px-4 py-3">
+                Connected account: {zoomStatus.data?.email || "None"}
+              </div>
+            </div>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => connectZoom.mutate()}
+                disabled={!zoomStatus.data?.configured || connectZoom.isPending}
+                className="rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {zoomStatus.data?.connected ? "Reconnect Zoom" : "Connect Zoom"}
+              </button>
+              {zoomStatus.data?.connected ? (
+                <button
+                  type="button"
+                  onClick={() => disconnectZoom.mutate()}
+                  disabled={disconnectZoom.isPending}
+                  className="rounded-full border border-border bg-white/70 px-5 py-3 text-sm font-semibold text-text disabled:opacity-60"
+                >
+                  Disconnect
+                </button>
+              ) : null}
+            </div>
+            {!zoomStatus.data?.configured ? (
+              <p className="mt-4 text-sm leading-7 text-muted">
+                Add `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`, and `ZOOM_OAUTH_REDIRECT_URI` to your environment before connecting Zoom.
               </p>
             ) : null}
           </Card>
