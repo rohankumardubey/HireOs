@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import AnswerScore, Candidate, CandidateJobMatch, Interview, InterviewQuestion, Job
 from app.services.ai import LLMGateway
+from app.services.fairness_guard import FairnessGuard
 from app.services.parsers import parse_job_description
 
 
@@ -18,6 +19,7 @@ def normalize(text: str) -> str:
 class HiringIntelligenceService:
     def __init__(self) -> None:
         self.llm = LLMGateway()
+        self.fairness_guard = FairnessGuard()
 
     def analyze_job(self, job: Job) -> dict:
         fallback = parse_job_description(job.job_description)
@@ -55,7 +57,7 @@ class HiringIntelligenceService:
         explanation = (
             f"{candidate.name} matches {len(matched_required)}/{max(len(required), 1)} required skills for "
             f"{job.title}. Experience fit is assessed at {round(experience_fit * 100)}%. "
-            "This is a decision-support score and still requires recruiter review."
+            "Protected attributes were excluded from AI processing. This is a decision-support score and still requires recruiter review."
         )
         return {
             "overall_score": total,
@@ -121,14 +123,16 @@ class HiringIntelligenceService:
         return questions
 
     def score_answer(self, question: InterviewQuestion, answer_text: str) -> dict:
-        normalized = normalize(answer_text)
+        redaction_summary = self.fairness_guard.sanitize_text(answer_text)
+        safe_answer_text = redaction_summary.sanitized_text.strip() or answer_text
+        normalized = normalize(safe_answer_text)
         expected = [normalize(concept) for concept in question.expected_concepts]
         matched = [concept for concept in question.expected_concepts if normalize(concept) in normalized]
         missing = [concept for concept in question.expected_concepts if concept not in matched]
         coverage = len(matched) / max(len(question.expected_concepts), 1)
-        word_count = max(len(answer_text.split()), 1)
+        word_count = max(len(safe_answer_text.split()), 1)
         depth = min(word_count / 80, 1.0)
-        clarity = 0.85 if "." in answer_text or "," in answer_text else 0.65
+        clarity = 0.85 if "." in safe_answer_text or "," in safe_answer_text else 0.65
         communication = min((word_count / 50), 1.0) * 0.7 + 0.3
         total = round(((coverage * 0.55) + (depth * 0.25) + (clarity * 0.1) + (communication * 0.1)) * 100, 2)
         strengths = []
@@ -148,6 +152,11 @@ class HiringIntelligenceService:
             f"Score is based on concept coverage ({len(matched)}/{max(len(question.expected_concepts), 1)}), "
             f"depth of explanation, and communication quality. Protected attributes are excluded."
         )
+        if redaction_summary.redaction_count:
+            explanation += (
+                f" Bias guard removed {redaction_summary.redaction_count} demographic reference"
+                f"{'s' if redaction_summary.redaction_count != 1 else ''} before scoring."
+            )
         return {
             "total_score": total,
             "skill_score": round(coverage * 100, 2),
@@ -198,6 +207,7 @@ class HiringIntelligenceService:
 
 ## Compliance Note
 AI-generated scores are decision-support signals and should be reviewed by a human recruiter.
+Protected attributes are redacted from AI resume and answer processing before scoring or matching.
 """
         report_html = "<html><body><pre>" + html.escape(report_md) + "</pre></body></html>"
         return {
@@ -211,4 +221,3 @@ AI-generated scores are decision-support signals and should be reviewed by a hum
                 {"step": "human_review_required", "value": True},
             ],
         }
-

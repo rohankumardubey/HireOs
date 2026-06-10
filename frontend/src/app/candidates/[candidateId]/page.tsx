@@ -201,6 +201,7 @@ export default function CandidateDetailPage() {
     accessLink.data?.candidate_portal_url ||
     inviteResult?.share_links.candidate_portal_url ||
     null;
+  const compliance = candidate.data?.parsed_profile?.compliance;
 
   return (
     <AppShell
@@ -235,6 +236,30 @@ export default function CandidateDetailPage() {
           <p className="mt-6 text-sm leading-7 text-muted">
             {candidate.data?.profile_summary || "Parsed resume summary unavailable."}
           </p>
+          <div className="mt-6 rounded-[20px] border border-border bg-white/70 px-4 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-text">Bias shield</p>
+              <Badge tone={compliance?.redaction_applied ? "warning" : "success"}>
+                {compliance?.redaction_applied ? "Redaction applied" : "No protected signals detected"}
+              </Badge>
+            </div>
+            <p className="mt-3 text-sm leading-7 text-muted">
+              {compliance?.policy_note ||
+                "HireOS removes protected-attribute signals from AI resume processing before matching and scoring."}
+            </p>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="rounded-[16px] bg-surface-elevated px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-soft">Protected-signal categories</p>
+                <p className="mt-2 font-semibold text-text">
+                  {compliance?.categories_detected?.length ? compliance.categories_detected.join(", ") : "None found"}
+                </p>
+              </div>
+              <div className="rounded-[16px] bg-surface-elevated px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-soft">Redaction count</p>
+                <p className="mt-2 font-semibold text-text">{compliance?.redaction_count ?? 0}</p>
+              </div>
+            </div>
+          </div>
           <div className="mt-6 flex flex-wrap gap-2">
             {((candidate.data?.parsed_profile.skills as string[]) || []).map((skill) => (
               <Badge key={skill} tone="brand">

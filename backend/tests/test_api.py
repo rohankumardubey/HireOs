@@ -827,6 +827,145 @@ def test_voice_interview_answer_accepts_transcript() -> None:
     assert payload["score"]["total_score"] >= 0
 
 
+def test_resume_upload_redacts_protected_attributes_before_ai_processing() -> None:
+    client = TestClient(main_module.app)
+    email = f"redact+{uuid4().hex[:8]}@hireos.ai"
+    company = f"Redact Co {uuid4().hex[:6]}"
+    signup = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "full_name": "Redaction Recruiter",
+            "email": email,
+            "password": "Demo@123",
+            "company_name": company,
+            "role": "admin",
+        },
+    )
+    assert signup.status_code == 200
+    token = signup.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    upload = client.post(
+        "/api/v1/candidates/upload-resume",
+        headers=headers,
+        files={
+            "file": (
+                "resume.txt",
+                (
+                    b"Taylor Safe\n"
+                    b"taylor.safe@example.com\n"
+                    b"DOB: 12/05/1995\n"
+                    b"Married\n"
+                    b"She/Her\n"
+                    b"Senior Data Engineer\n"
+                    b"Python SQL Kafka Airflow PostgreSQL\n"
+                ),
+                "text/plain",
+            )
+        },
+        data={"name": "Taylor Safe", "email": "taylor.safe@example.com", "location": "Remote"},
+    )
+    assert upload.status_code == 200
+    payload = upload.json()
+    compliance = payload["parsed_resume"]["compliance"]
+    assert compliance["redaction_applied"] is True
+    assert compliance["redaction_count"] >= 3
+    assert "age_or_date_of_birth" in compliance["categories_detected"]
+    assert "marital_status" in compliance["categories_detected"]
+    assert "gender_or_pronouns" in compliance["categories_detected"]
+    assert "married" not in payload["parsed_resume"]["summary"].lower()
+    assert "dob" not in payload["parsed_resume"]["summary"].lower()
+
+
+def test_answer_scoring_redacts_demographic_references() -> None:
+    client = TestClient(main_module.app)
+    email = f"answer-redact+{uuid4().hex[:8]}@hireos.ai"
+    company = f"Answer Redact Co {uuid4().hex[:6]}"
+    signup = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "full_name": "Answer Recruiter",
+            "email": email,
+            "password": "Demo@123",
+            "company_name": company,
+            "role": "admin",
+        },
+    )
+    assert signup.status_code == 200
+    token = signup.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    job = client.post(
+        "/api/v1/jobs",
+        headers=headers,
+        json={
+            "title": "Backend Engineer",
+            "department": "Engineering",
+            "location": "Remote",
+            "work_mode": "remote",
+            "experience_range": "3-6 years",
+            "employment_type": "full-time",
+            "salary_range": "$120k-$145k",
+            "status": "open",
+            "job_description": "Build APIs with Python, FastAPI, and PostgreSQL.",
+            "required_skills": ["python", "fastapi", "postgresql"],
+            "preferred_skills": ["redis"],
+        },
+    )
+    assert job.status_code == 200
+    job_id = job.json()["id"]
+
+    upload = client.post(
+        "/api/v1/candidates/upload-resume",
+        headers=headers,
+        files={"file": ("resume.txt", b"Alex Secure\nalex@example.com\nPython FastAPI PostgreSQL\n", "text/plain")},
+        data={"name": "Alex Secure", "email": "alex@example.com", "location": "Remote"},
+    )
+    assert upload.status_code == 200
+    candidate_id = upload.json()["candidate"]["id"]
+
+    invite = client.post(
+        "/api/v1/interviews/invite",
+        headers=headers,
+        json={
+            "candidate_id": candidate_id,
+            "job_id": job_id,
+            "interview_type": "Technical screening",
+            "mode": "text",
+        },
+    )
+    assert invite.status_code == 200
+    interview_id = invite.json()["id"]
+    access_token = extract_access_token(invite.json()["share_links"]["candidate_portal_url"])
+
+    start = client.post(
+        f"/api/v1/interviews/{interview_id}/start",
+        json={"consent_given": True, "access_token": access_token},
+    )
+    assert start.status_code == 200
+
+    question = client.get(f"/api/v1/interviews/{interview_id}/next-question?access={access_token}")
+    assert question.status_code == 200
+    question_id = question.json()["id"]
+
+    answer = client.post(
+        f"/api/v1/interviews/{interview_id}/answers",
+        json={
+            "question_id": question_id,
+            "answer_text": (
+                "She/her pronouns aside, I built Python FastAPI services in production and improved "
+                "PostgreSQL reliability with strong API ownership."
+            ),
+            "answer_mode": "text",
+            "latency_ms": 12000,
+            "access_token": access_token,
+        },
+    )
+    assert answer.status_code == 200
+    explanation = answer.json()["score"]["explanation"]
+    assert "Bias guard removed" in explanation
+
+
 def test_interview_invite_returns_shareable_links() -> None:
     client = TestClient(main_module.app)
     email = f"invite+{uuid4().hex[:8]}@hireos.ai"
