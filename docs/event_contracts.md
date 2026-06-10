@@ -6,6 +6,7 @@
 - `hireos.job.created`
 - `hireos.resume.uploaded`
 - `hireos.resume.parsed`
+- `hireos.resume.redacted`
 - `hireos.jd.parsed`
 - `hireos.candidate.matched`
 - `hireos.interview.invited`
@@ -50,4 +51,3 @@
 - Local consumer skeleton: [backend/app/workers/analytics_consumer.py](/Users/dubeyroh/Library/CloudStorage/OneDrive-TheStarsGroup/Desktop/HireOs/backend/app/workers/analytics_consumer.py)
 - Kafka topic bootstrap: [infra/kafka/create-topics.sh](/Users/dubeyroh/Library/CloudStorage/OneDrive-TheStarsGroup/Desktop/HireOs/infra/kafka/create-topics.sh)
 - Flink skeleton: [infra/flink/HireOsMetricsJob.java](/Users/dubeyroh/Library/CloudStorage/OneDrive-TheStarsGroup/Desktop/HireOs/infra/flink/HireOsMetricsJob.java)
-

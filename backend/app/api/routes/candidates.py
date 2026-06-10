@@ -12,6 +12,7 @@ from app.db.session import get_db
 from app.dependencies.auth import get_current_user, get_primary_membership, require_roles
 from app.schemas import CandidateCreate, CandidateRead, CandidateReviewWorkspaceRead, MatchResultRead
 from app.services.events import EventPublisher, log_audit
+from app.services.fairness_guard import FairnessGuard
 from app.services.parsers import extract_text_from_upload, parse_resume_text
 from app.services.review_workspace import CandidateReviewWorkspaceService
 from app.services.scoring import HiringIntelligenceService
@@ -20,6 +21,7 @@ router = APIRouter(prefix="/candidates", tags=["candidates"])
 events = EventPublisher()
 ai = HiringIntelligenceService()
 review_workspace = CandidateReviewWorkspaceService()
+fairness_guard = FairnessGuard()
 
 
 @router.post("", response_model=CandidateRead)
@@ -55,7 +57,9 @@ async def upload_resume(
     if Path(file.filename or "").suffix.lower() not in {".pdf", ".docx", ".txt"}:
         raise HTTPException(status_code=400, detail="Unsupported file type")
     text = extract_text_from_upload(file.filename or "resume.txt", content)
-    parsed = parse_resume_text(text)
+    redaction_summary = fairness_guard.sanitize_text(text)
+    parsed = parse_resume_text(redaction_summary.sanitized_text)
+    parsed["compliance"] = redaction_summary.to_dict()
     candidate = db.get(Candidate, candidate_id) if candidate_id else None
     if not candidate:
         candidate = Candidate(
@@ -93,7 +97,12 @@ async def upload_resume(
             file_name=file.filename or "resume.txt",
             file_path=str(save_path),
             raw_text=text,
-            parser_metadata={"source": "upload", "format": Path(file.filename or "").suffix.lower()},
+            parser_metadata={
+                "source": "upload",
+                "format": Path(file.filename or "").suffix.lower(),
+                "sanitized_text": redaction_summary.sanitized_text,
+                "compliance": redaction_summary.to_dict(),
+            },
         )
     )
     events.publish(
@@ -116,6 +125,17 @@ async def upload_resume(
         actor_type="system",
         payload=parsed,
     )
+    if redaction_summary.redaction_count:
+        events.publish(
+            db,
+            event_type="resume.redacted",
+            topic_name="hireos.resume.redacted",
+            company_id=membership.company_id,
+            candidate_id=candidate.id,
+            actor_id=current_user.id,
+            actor_type="system",
+            payload=redaction_summary.to_dict(),
+        )
     log_audit(db, current_user.id, "candidate", candidate.id, "resume.uploaded", {"file_name": file.filename})
     db.commit()
     db.refresh(candidate)

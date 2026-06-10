@@ -8,6 +8,7 @@ HireOS AI is built as a production-style SaaS starter, not a demo chatbot. It co
 
 - Creates company workspaces with JWT auth and RBAC for `admin`, `recruiter`, `candidate`, and `hiring_manager`
 - Lets recruiters create jobs, parse job descriptions, upload resumes, and generate AI-assisted match results
+- Redacts protected-attribute signals from resumes and candidate answers before AI matching or scoring
 - Runs structured AI interview flows with question plans, answer scoring, follow-up guidance, and report generation
 - Shows recruiter dashboards, candidate ranking, analytics, and override-friendly human review workflows
 - Pushes recruiter-approved shortlist decisions into external ATS/webhook systems with delivery history and manual retry
@@ -116,6 +117,13 @@ Use these when you want the `Send with HireOS` button on the candidate invite sc
 - Recruiters can refresh a link to invalidate an older invite, or revoke access completely from the candidate detail workspace
 - Reminder emails reuse the active link and stop sending once an interview link has been revoked
 - Default expiry is controlled by `INTERVIEW_MAGIC_LINK_TTL_HOURS`
+
+### Bias shield
+
+- Resume uploads now pass through a fairness guard before AI parsing and matching
+- Candidate interview answers are sanitized for protected-attribute references before semantic scoring
+- Recruiters can see whether redaction ran, how many signals were removed, and which protected-signal categories were detected
+- The original resume is still retained for human review, but AI processing uses the sanitized version
 
 ### Secret storage
 

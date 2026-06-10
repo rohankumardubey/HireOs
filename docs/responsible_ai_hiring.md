@@ -13,6 +13,8 @@ HireOS AI is decision support software, not an automated hiring decision-maker.
 ## Fairness considerations
 
 - Protected attributes should not be used in scoring or ranking.
+- HireOS now redacts detected protected-attribute signals from resume text before AI parsing and job matching.
+- HireOS also redacts protected-attribute references from candidate answers before interview scoring.
 - Recruiters must be able to see why a score was produced.
 - Low-confidence outputs should increase review pressure, not silently downgrade candidates.
 
@@ -28,6 +30,7 @@ HireOS AI is decision support software, not an automated hiring decision-maker.
 - Audit logs capture entity changes and recruiter decisions.
 - Event envelopes keep the lifecycle observable.
 - Reports preserve score explanations and next-step rationale.
+- Resume compliance metadata records when redaction was applied, how many signals were removed, and which protected-signal categories were detected.
 
 ## Data retention suggestions
 
@@ -39,4 +42,3 @@ HireOS AI is decision support software, not an automated hiring decision-maker.
 
 - Resume uploads and transcripts contain personal data.
 - Production deployments should add encryption, retention rules, access review, and DSR handling.
-
