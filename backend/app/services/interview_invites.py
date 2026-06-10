@@ -17,6 +17,7 @@ class InterviewInviteLinkBuilder:
         candidate_email: str,
         job_title: str,
         candidate_portal_url: str,
+        candidate_portal_expires_at: datetime | None = None,
     ) -> dict:
         normalized_provider = meeting_provider.lower()
         normalized_mode = mode.lower()
@@ -53,6 +54,7 @@ class InterviewInviteLinkBuilder:
                 "meeting_provider_label": provider_label,
                 "candidate_email": candidate_email,
                 "candidate_portal_url": candidate_portal_url,
+                "candidate_portal_expires_at": candidate_portal_expires_at,
                 "candidate_join_url": meeting_join_url,
                 "meeting_setup_url": meeting_join_url,
                 "email_compose_url": f"mailto:{quote(candidate_email)}?{mailto_query}",
@@ -73,6 +75,8 @@ class InterviewInviteLinkBuilder:
             f"You have been invited to the HireOS AI interview flow for the {job_title} role.\n\n"
             f"Candidate interview link: {candidate_portal_url}\n"
         )
+        if candidate_portal_expires_at:
+            email_body += f"This secure interview link expires on {candidate_portal_expires_at.strftime('%Y-%m-%d %H:%M UTC')}.\n"
 
         if normalized_provider == "zoom":
             meeting_setup_url = "https://zoom.us/meeting/schedule"
@@ -125,6 +129,7 @@ class InterviewInviteLinkBuilder:
             "meeting_provider_label": provider_label,
             "candidate_email": candidate_email,
             "candidate_portal_url": candidate_portal_url,
+            "candidate_portal_expires_at": candidate_portal_expires_at,
             "candidate_join_url": candidate_portal_url,
             "meeting_setup_url": meeting_setup_url,
             "email_compose_url": f"mailto:{quote(candidate_email)}?{mailto_query}",

@@ -2,7 +2,7 @@
 
 import { Mic, Square, Waves } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -40,7 +40,9 @@ type SpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
 export default function InterviewSessionPage() {
   const params = useParams<{ interviewId: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const interviewId = params.interviewId;
+  const accessToken = searchParams.get("access");
   const [currentQuestion, setCurrentQuestion] = useState<InterviewQuestion | null>(null);
   const [answer, setAnswer] = useState("");
   const [transcriptDraft, setTranscriptDraft] = useState("");
@@ -52,6 +54,7 @@ export default function InterviewSessionPage() {
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [audioPreviewUrl, setAudioPreviewUrl] = useState<string | null>(null);
   const [speechSupported, setSpeechSupported] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -62,11 +65,11 @@ export default function InterviewSessionPage() {
 
   useEffect(() => {
     const initialize = async () => {
-      const interview = await api.startInterview(interviewId);
+      const interview = await api.startInterview(interviewId, accessToken);
       setInterviewMode(interview.mode);
-      const next = await api.getNextQuestion(interviewId);
+      const next = await api.getNextQuestion(interviewId, accessToken);
       if ("done" in next) {
-        const report = await api.completeInterview(interviewId);
+        const report = await api.completeInterview(interviewId, accessToken);
         router.replace(`/interview/${interviewId}/complete?reportId=${report.id}`);
         return;
       }
@@ -74,8 +77,11 @@ export default function InterviewSessionPage() {
       setBooting(false);
     };
 
-    initialize().catch(() => setBooting(false));
-  }, [interviewId, router]);
+    initialize().catch((error) => {
+      setSessionError(error instanceof Error ? error.message : "We could not validate this interview link.");
+      setBooting(false);
+    });
+  }, [accessToken, interviewId, router]);
 
   useEffect(() => {
     return () => {
@@ -210,8 +216,9 @@ export default function InterviewSessionPage() {
         answer_mode: interviewMode,
         transcript_text: interviewMode === "voice" ? preparedText : null,
         latency_ms: interviewMode === "voice" ? recordingSeconds * 1000 : 0,
+        access_token: accessToken,
       });
-      const next = await api.getNextQuestion(interviewId);
+      const next = await api.getNextQuestion(interviewId, accessToken);
       return { result, next };
     },
     onSuccess: async ({ result, next }) => {
@@ -226,7 +233,7 @@ export default function InterviewSessionPage() {
       }
       setAudioPreviewUrl(null);
       if ("done" in next) {
-        const report = await api.completeInterview(interviewId);
+        const report = await api.completeInterview(interviewId, accessToken);
         router.replace(`/interview/${interviewId}/complete?reportId=${report.id}`);
         return;
       }
@@ -240,6 +247,22 @@ export default function InterviewSessionPage() {
         <div className="glass rounded-[28px] border border-border bg-surface px-6 py-4 text-sm text-muted">
           Preparing your interview session...
         </div>
+      </div>
+    );
+  }
+
+  if (sessionError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-5 py-8">
+        <Card className="w-full max-w-2xl text-center">
+          <h1 className="font-display text-4xl font-semibold text-text">Interview link unavailable</h1>
+          <p className="mt-4 text-sm leading-7 text-muted">
+            {sessionError}
+          </p>
+          <p className="mt-3 text-sm leading-7 text-muted">
+            Ask your recruiter for a fresh HireOS invite link if this one was replaced, revoked, or expired.
+          </p>
+        </Card>
       </div>
     );
   }

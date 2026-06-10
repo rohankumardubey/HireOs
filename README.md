@@ -11,6 +11,7 @@ HireOS AI is built as a production-style SaaS starter, not a demo chatbot. It co
 - Runs structured AI interview flows with question plans, answer scoring, follow-up guidance, and report generation
 - Shows recruiter dashboards, candidate ranking, analytics, and override-friendly human review workflows
 - Pushes recruiter-approved shortlist decisions into external ATS/webhook systems with delivery history and manual retry
+- Protects candidate interview access with expiring magic links that recruiters can refresh or revoke without exposing interview IDs alone
 - Emits lifecycle events to Kafka when available, or local JSONL when running lightweight
 - Includes local observability, lakehouse-ready analytics assets, and evaluation scaffolding
 
@@ -67,6 +68,7 @@ flowchart LR
      - `SMTP_USE_TLS`
    - if SMTP is left blank, HireOS still works and writes fallback invite payloads to `data/email_outbox/` for local demo use
    - if you want automatic ATS/webhook handoff after recruiter shortlist decisions, optionally set `ATS_WEBHOOK_TIMEOUT_SECONDS` and then configure the webhook endpoint in `Settings`
+   - adjust `INTERVIEW_MAGIC_LINK_TTL_HOURS` if you want candidate interview invites to expire faster or stay active longer
 2. Quick start in one command:
    - `bash scripts/run_everything.sh`
    - or `make run-all`
@@ -107,6 +109,13 @@ Use these when you want the `Send with HireOS` button on the candidate invite sc
 - Supported automatic export stages: `shortlisted`, `moved_to_next_round`, `hired`
 - HireOS signs webhook bodies with `X-HireOS-Signature` when you store a signing secret
 - Failed exports never block recruiter decisions; recruiters can retry from the candidate decision workspace
+
+### Candidate magic links
+
+- Every async HireOS interview invite now uses a signed candidate magic link instead of relying on a bare interview ID
+- Recruiters can refresh a link to invalidate an older invite, or revoke access completely from the candidate detail workspace
+- Reminder emails reuse the active link and stop sending once an interview link has been revoked
+- Default expiry is controlled by `INTERVIEW_MAGIC_LINK_TTL_HOURS`
 
 ### Secret storage
 

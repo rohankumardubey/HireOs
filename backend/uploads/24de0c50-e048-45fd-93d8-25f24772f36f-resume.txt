@@ -1,0 +1,4 @@
+Sky Magic
+sky@example.com
+Backend Engineer
+Python FastAPI PostgreSQL

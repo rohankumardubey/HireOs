@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     smtp_from_name: str = "HireOS AI"
     smtp_use_tls: bool = True
     ats_webhook_timeout_seconds: int = 15
+    interview_magic_link_ttl_hours: int = 24 * 7
     interview_invite_reminder_after_hours: int = 24
     interview_incomplete_reminder_after_hours: int = 6
     interview_reminder_cooldown_hours: int = 12

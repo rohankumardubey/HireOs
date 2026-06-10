@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -29,6 +29,7 @@ from app.schemas import (
     AnswerSubmitRequest,
     DecisionRequest,
     InterviewEmailSendResponse,
+    InterviewAccessLinkRead,
     InterviewInviteRequest,
     InterviewInviteResponse,
     InterviewQuestionRead,
@@ -46,6 +47,7 @@ from app.services.email_delivery import InterviewEmailDeliveryService
 from app.services.events import EventPublisher, log_audit
 from app.services.google_calendar import GoogleCalendarIntegrationService
 from app.services.interview_invites import InterviewInviteLinkBuilder
+from app.services.interview_access import InterviewAccessService
 from app.services.interview_reminders import InterviewReminderAutomationService
 from app.services.scoring import HiringIntelligenceService
 from app.services.zoom_calendar import ZoomCalendarIntegrationService
@@ -54,6 +56,7 @@ router = APIRouter(prefix="/interviews", tags=["interviews"])
 events = EventPublisher()
 ai = HiringIntelligenceService()
 invite_links = InterviewInviteLinkBuilder()
+interview_access = InterviewAccessService()
 google_calendar = GoogleCalendarIntegrationService()
 email_delivery = InterviewEmailDeliveryService()
 reminder_automation = InterviewReminderAutomationService()
@@ -91,7 +94,8 @@ def invite_candidate(
     )
     db.add(interview)
     db.flush()
-    candidate_portal_url = f"{settings.public_app_url.rstrip('/')}/interview/{interview.id}"
+    access_status = interview_access.issue_link(interview)
+    candidate_portal_url = access_status.candidate_portal_url or f"{settings.public_app_url.rstrip('/')}/interview/{interview.id}"
     meeting_join_url = str(payload.meeting_join_url) if payload.meeting_join_url else None
     if payload.mode == "video" and payload.meeting_provider == "google_meet" and not meeting_join_url:
         if not google_calendar.is_configured():
@@ -182,6 +186,7 @@ def invite_candidate(
         candidate_email=candidate.email,
         job_title=job.title,
         candidate_portal_url=candidate_portal_url,
+        candidate_portal_expires_at=access_status.expires_at,
     )
     return InterviewInviteResponse(
         **InterviewRead.model_validate(interview).model_dump(),
@@ -205,7 +210,15 @@ def send_interview_email(
 
     summary = interview.summary_json or {}
     scheduled_at = datetime.fromisoformat(summary["scheduled_at"]) if summary.get("scheduled_at") else None
-    candidate_portal_url = f"{settings.public_app_url.rstrip('/')}/interview/{interview.id}"
+    try:
+        candidate_portal_url = interview_access.get_or_create_candidate_portal_url(
+            interview,
+            renew_if_missing=True,
+            renew_if_expired=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    access_status = interview_access.status(interview)
     share_links = invite_links.build(
         mode=interview.mode,
         meeting_provider=summary.get("meeting_provider", "google_meet"),
@@ -216,6 +229,7 @@ def send_interview_email(
         candidate_email=candidate.email,
         job_title=job.title,
         candidate_portal_url=candidate_portal_url,
+        candidate_portal_expires_at=access_status.expires_at,
     )
 
     delivery = email_delivery.send_interview_invite(
@@ -405,11 +419,94 @@ def export_interview_to_ats(
     return ATSWebhookExportResponse(status=delivery.status, delivery=WebhookDeliveryRead.model_validate(delivery))
 
 
+@router.get("/{interview_id}/access-link", response_model=InterviewAccessLinkRead)
+def get_interview_access_link(
+    interview_id: str,
+    current_user=Depends(require_roles("admin", "recruiter", "hiring_manager")),
+    db: Session = Depends(get_db),
+) -> InterviewAccessLinkRead:
+    interview = db.get(Interview, interview_id)
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+    return InterviewAccessLinkRead(**interview_access.status(interview).__dict__)
+
+
+@router.post("/{interview_id}/access-link/refresh", response_model=InterviewAccessLinkRead)
+def refresh_interview_access_link(
+    interview_id: str,
+    current_user=Depends(require_roles("admin", "recruiter", "hiring_manager")),
+    db: Session = Depends(get_db),
+) -> InterviewAccessLinkRead:
+    interview = db.get(Interview, interview_id)
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+    status_payload = interview_access.refresh_link(interview)
+    log_audit(
+        db,
+        current_user.id,
+        "interview",
+        interview.id,
+        "interview.access_link_refreshed",
+        {"expires_at": status_payload.expires_at.isoformat() if status_payload.expires_at else None},
+    )
+    events.publish(
+        db,
+        event_type="interview.access_link_refreshed",
+        topic_name="hireos.interview.access_link_refreshed",
+        company_id=interview.company_id,
+        job_id=interview.job_id,
+        candidate_id=interview.candidate_id,
+        interview_id=interview.id,
+        actor_id=current_user.id,
+        actor_type="recruiter",
+        payload={"expires_at": status_payload.expires_at.isoformat() if status_payload.expires_at else None},
+    )
+    db.commit()
+    db.refresh(interview)
+    return InterviewAccessLinkRead(**interview_access.status(interview).__dict__)
+
+
+@router.post("/{interview_id}/access-link/revoke", response_model=InterviewAccessLinkRead)
+def revoke_interview_access_link(
+    interview_id: str,
+    current_user=Depends(require_roles("admin", "recruiter", "hiring_manager")),
+    db: Session = Depends(get_db),
+) -> InterviewAccessLinkRead:
+    interview = db.get(Interview, interview_id)
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+    status_payload = interview_access.revoke_link(interview, actor_id=current_user.id)
+    log_audit(
+        db,
+        current_user.id,
+        "interview",
+        interview.id,
+        "interview.access_link_revoked",
+        {"revoked_at": status_payload.revoked_at.isoformat() if status_payload.revoked_at else None},
+    )
+    events.publish(
+        db,
+        event_type="interview.access_link_revoked",
+        topic_name="hireos.interview.access_link_revoked",
+        company_id=interview.company_id,
+        job_id=interview.job_id,
+        candidate_id=interview.candidate_id,
+        interview_id=interview.id,
+        actor_id=current_user.id,
+        actor_type="recruiter",
+        payload={"revoked_at": status_payload.revoked_at.isoformat() if status_payload.revoked_at else None},
+    )
+    db.commit()
+    db.refresh(interview)
+    return InterviewAccessLinkRead(**interview_access.status(interview).__dict__)
+
+
 @router.post("/{interview_id}/start", response_model=InterviewRead)
 def start_interview(interview_id: str, payload: InterviewStartRequest, db: Session = Depends(get_db)) -> InterviewRead:
     interview = db.get(Interview, interview_id)
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
+    interview_access.require_valid_access(interview, payload.access_token)
     interview.status = InterviewStatus.started.value
     interview.started_at = datetime.utcnow()
     interview.consent_given = payload.consent_given
@@ -431,10 +528,15 @@ def start_interview(interview_id: str, payload: InterviewStartRequest, db: Sessi
 
 
 @router.get("/{interview_id}/next-question", response_model=InterviewQuestionRead | dict)
-def next_question(interview_id: str, db: Session = Depends(get_db)) -> InterviewQuestionRead | dict:
+def next_question(
+    interview_id: str,
+    access: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> InterviewQuestionRead | dict:
     interview = db.execute(select(Interview).options(selectinload(Interview.questions)).where(Interview.id == interview_id)).scalar_one_or_none()
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
+    interview_access.require_valid_access(interview, access)
     ordered_questions = sorted(interview.questions, key=lambda item: item.question_order)
     if interview.current_question_index >= len(ordered_questions):
         return {"done": True}
@@ -447,6 +549,7 @@ def submit_answer(interview_id: str, payload: AnswerSubmitRequest, db: Session =
     interview = db.execute(select(Interview).options(selectinload(Interview.questions)).where(Interview.id == interview_id)).scalar_one_or_none()
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
+    interview_access.require_valid_access(interview, payload.access_token)
     question = db.get(InterviewQuestion, payload.question_id)
     if not question:
         raise HTTPException(status_code=404, detail="Question not found")
@@ -528,7 +631,11 @@ def submit_answer(interview_id: str, payload: AnswerSubmitRequest, db: Session =
 
 
 @router.post("/{interview_id}/complete", response_model=ReportRead)
-def complete_interview(interview_id: str, db: Session = Depends(get_db)) -> ReportRead:
+def complete_interview(
+    interview_id: str,
+    access: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> ReportRead:
     interview = db.execute(
         select(Interview)
         .options(selectinload(Interview.answers).selectinload(InterviewAnswer.score), selectinload(Interview.questions))
@@ -536,6 +643,7 @@ def complete_interview(interview_id: str, db: Session = Depends(get_db)) -> Repo
     ).scalar_one_or_none()
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
+    interview_access.require_valid_access(interview, access)
     candidate = db.get(Candidate, interview.candidate_id)
     job = db.get(Job, interview.job_id)
     match_result = db.execute(
@@ -552,6 +660,7 @@ def complete_interview(interview_id: str, db: Session = Depends(get_db)) -> Repo
     interview.status = InterviewStatus.completed.value
     interview.completed_at = datetime.utcnow()
     interview.summary_json = {
+        **(interview.summary_json or {}),
         "average_score": round(sum(score.total_score for score in scores) / max(len(scores), 1), 2) if scores else 0,
         "questions_answered": len(interview.answers),
     }

@@ -18,6 +18,10 @@ from app.db.models import Company, Interview
 from app.db.session import SessionLocal, engine, init_db
 
 
+def extract_access_token(url: str) -> str:
+    return parse_qs(urlparse(url).query)["access"][0]
+
+
 def test_health() -> None:
     init_db()
     client = TestClient(main_module.app)
@@ -602,11 +606,15 @@ def test_candidate_review_workspace_includes_decision_history_and_timeline() -> 
     )
     assert invite.status_code == 200
     interview_id = invite.json()["id"]
+    access_token = extract_access_token(invite.json()["share_links"]["candidate_portal_url"])
 
-    start = client.post(f"/api/v1/interviews/{interview_id}/start", json={"consent_given": True})
+    start = client.post(
+        f"/api/v1/interviews/{interview_id}/start",
+        json={"consent_given": True, "access_token": access_token},
+    )
     assert start.status_code == 200
 
-    question = client.get(f"/api/v1/interviews/{interview_id}/next-question")
+    question = client.get(f"/api/v1/interviews/{interview_id}/next-question?access={access_token}")
     assert question.status_code == 200
     question_id = question.json()["id"]
 
@@ -617,11 +625,12 @@ def test_candidate_review_workspace_includes_decision_history_and_timeline() -> 
             "answer_text": "I have led Python and Kafka platform work with strong production instrumentation.",
             "answer_mode": "text",
             "latency_ms": 18000,
+            "access_token": access_token,
         },
     )
     assert answer.status_code == 200
 
-    report = client.post(f"/api/v1/interviews/{interview_id}/complete")
+    report = client.post(f"/api/v1/interviews/{interview_id}/complete?access={access_token}")
     assert report.status_code == 200
 
     decision = client.post(
@@ -789,12 +798,16 @@ def test_voice_interview_answer_accepts_transcript() -> None:
     )
     assert invite.status_code == 200
     interview_id = invite.json()["id"]
+    access_token = extract_access_token(invite.json()["share_links"]["candidate_portal_url"])
 
-    start = client.post(f"/api/v1/interviews/{interview_id}/start", json={"consent_given": True})
+    start = client.post(
+        f"/api/v1/interviews/{interview_id}/start",
+        json={"consent_given": True, "access_token": access_token},
+    )
     assert start.status_code == 200
     assert start.json()["mode"] == "voice"
 
-    question = client.get(f"/api/v1/interviews/{interview_id}/next-question")
+    question = client.get(f"/api/v1/interviews/{interview_id}/next-question?access={access_token}")
     assert question.status_code == 200
     question_id = question.json()["id"]
 
@@ -806,6 +819,7 @@ def test_voice_interview_answer_accepts_transcript() -> None:
             "transcript_text": "I have built Python ML services with measurable production impact and collaborated closely with stakeholders.",
             "answer_mode": "voice",
             "latency_ms": 42000,
+            "access_token": access_token,
         },
     )
     assert answer.status_code == 200
@@ -874,10 +888,106 @@ def test_interview_invite_returns_shareable_links() -> None:
     assert invite.status_code == 200
     payload = invite.json()
     assert payload["share_links"]["candidate_email"] == "rhea@example.com"
-    assert payload["share_links"]["candidate_portal_url"].endswith(f"/interview/{payload['id']}")
-    assert payload["share_links"]["candidate_join_url"].endswith(f"/interview/{payload['id']}")
+    assert payload["share_links"]["candidate_portal_url"].startswith(f"http://localhost:3000/interview/{payload['id']}?access=")
+    assert payload["share_links"]["candidate_join_url"].startswith(f"http://localhost:3000/interview/{payload['id']}?access=")
+    assert payload["share_links"]["candidate_portal_expires_at"]
     assert "calendar.google.com" in payload["share_links"]["meeting_setup_url"]
     assert payload["share_links"]["email_compose_url"].startswith("mailto:rhea%40example.com")
+
+
+def test_candidate_magic_link_requires_token_and_supports_refresh_and_revoke() -> None:
+    client = TestClient(main_module.app)
+    email = f"magic+{uuid4().hex[:8]}@hireos.ai"
+    company = f"Magic Co {uuid4().hex[:6]}"
+    signup = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "full_name": "Magic Recruiter",
+            "email": email,
+            "password": "Demo@123",
+            "company_name": company,
+            "role": "admin",
+        },
+    )
+    assert signup.status_code == 200
+    token = signup.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    job = client.post(
+        "/api/v1/jobs",
+        headers=headers,
+        json={
+            "title": "Backend Engineer",
+            "department": "Engineering",
+            "location": "Remote",
+            "work_mode": "remote",
+            "experience_range": "3-6 years",
+            "employment_type": "full-time",
+            "salary_range": "$120k-$145k",
+            "status": "open",
+            "job_description": "Build APIs with Python, FastAPI, and PostgreSQL.",
+            "required_skills": ["python", "fastapi", "postgresql"],
+            "preferred_skills": ["redis"],
+        },
+    )
+    assert job.status_code == 200
+    job_id = job.json()["id"]
+
+    upload = client.post(
+        "/api/v1/candidates/upload-resume",
+        headers=headers,
+        files={"file": ("resume.txt", b"Sky Magic\nsky@example.com\nBackend Engineer\nPython FastAPI PostgreSQL\n", "text/plain")},
+        data={"name": "Sky Magic", "email": "sky@example.com", "location": "Remote"},
+    )
+    assert upload.status_code == 200
+    candidate_id = upload.json()["candidate"]["id"]
+
+    invite = client.post(
+        "/api/v1/interviews/invite",
+        headers=headers,
+        json={
+            "candidate_id": candidate_id,
+            "job_id": job_id,
+            "interview_type": "Technical screening",
+            "mode": "text",
+        },
+    )
+    assert invite.status_code == 200
+    interview_id = invite.json()["id"]
+    original_access = extract_access_token(invite.json()["share_links"]["candidate_portal_url"])
+
+    unauthorized = client.post(f"/api/v1/interviews/{interview_id}/start", json={"consent_given": True})
+    assert unauthorized.status_code == 401
+
+    started = client.post(
+        f"/api/v1/interviews/{interview_id}/start",
+        json={"consent_given": True, "access_token": original_access},
+    )
+    assert started.status_code == 200
+
+    status_response = client.get(f"/api/v1/interviews/{interview_id}/access-link", headers=headers)
+    assert status_response.status_code == 200
+    assert status_response.json()["is_active"] is True
+
+    refreshed = client.post(f"/api/v1/interviews/{interview_id}/access-link/refresh", headers=headers)
+    assert refreshed.status_code == 200
+    refreshed_url = refreshed.json()["candidate_portal_url"]
+    assert refreshed_url
+    refreshed_access = extract_access_token(refreshed_url)
+    assert refreshed_access != original_access
+
+    old_token_response = client.get(f"/api/v1/interviews/{interview_id}/next-question?access={original_access}")
+    assert old_token_response.status_code == 401
+
+    new_token_response = client.get(f"/api/v1/interviews/{interview_id}/next-question?access={refreshed_access}")
+    assert new_token_response.status_code == 200
+
+    revoked = client.post(f"/api/v1/interviews/{interview_id}/access-link/revoke", headers=headers)
+    assert revoked.status_code == 200
+    assert revoked.json()["is_revoked"] is True
+
+    revoked_response = client.get(f"/api/v1/interviews/{interview_id}/next-question?access={refreshed_access}")
+    assert revoked_response.status_code == 401
 
 
 def test_send_interview_email_creates_delivery_history() -> None:
@@ -1182,11 +1292,15 @@ def test_ranking_simulator_reorders_candidates_when_weights_change() -> None:
         assert invite.status_code == 200
         interview_id = invite.json()["id"]
         interview_ids[name] = interview_id
+        access_token = extract_access_token(invite.json()["share_links"]["candidate_portal_url"])
 
-        start = client.post(f"/api/v1/interviews/{interview_id}/start", json={"consent_given": True})
+        start = client.post(
+            f"/api/v1/interviews/{interview_id}/start",
+            json={"consent_given": True, "access_token": access_token},
+        )
         assert start.status_code == 200
 
-        question = client.get(f"/api/v1/interviews/{interview_id}/next-question")
+        question = client.get(f"/api/v1/interviews/{interview_id}/next-question?access={access_token}")
         assert question.status_code == 200
         question_id = question.json()["id"]
 
@@ -1197,6 +1311,7 @@ def test_ranking_simulator_reorders_candidates_when_weights_change() -> None:
                 "answer_text": answer_text,
                 "answer_mode": "text",
                 "latency_ms": 15000,
+                "access_token": access_token,
             },
         )
         assert answer.status_code == 200
@@ -1300,9 +1415,13 @@ def test_interview_reminder_preview_and_run() -> None:
         )
         assert invite.status_code == 200
         interview_ids.append(invite.json()["id"])
-
-    started = client.post(f"/api/v1/interviews/{interview_ids[1]}/start", json={"consent_given": True})
-    assert started.status_code == 200
+        invite_access_token = extract_access_token(invite.json()["share_links"]["candidate_portal_url"])
+        if candidate_email == "omar@example.com":
+            started = client.post(
+                f"/api/v1/interviews/{interview_ids[1]}/start",
+                json={"consent_given": True, "access_token": invite_access_token},
+            )
+            assert started.status_code == 200
 
     stale_time = datetime.now(UTC).replace(tzinfo=None)
     with SessionLocal() as db:
@@ -1451,11 +1570,15 @@ def test_ats_webhook_export_flows_from_recruiter_decision(monkeypatch) -> None:
     )
     assert invite.status_code == 200
     interview_id = invite.json()["id"]
+    access_token = extract_access_token(invite.json()["share_links"]["candidate_portal_url"])
 
-    start = client.post(f"/api/v1/interviews/{interview_id}/start", json={"consent_given": True})
+    start = client.post(
+        f"/api/v1/interviews/{interview_id}/start",
+        json={"consent_given": True, "access_token": access_token},
+    )
     assert start.status_code == 200
 
-    question = client.get(f"/api/v1/interviews/{interview_id}/next-question")
+    question = client.get(f"/api/v1/interviews/{interview_id}/next-question?access={access_token}")
     assert question.status_code == 200
     question_id = question.json()["id"]
 
@@ -1466,11 +1589,12 @@ def test_ats_webhook_export_flows_from_recruiter_decision(monkeypatch) -> None:
             "answer_text": "I have shipped integration pipelines and webhook delivery tooling in production.",
             "answer_mode": "text",
             "latency_ms": 14000,
+            "access_token": access_token,
         },
     )
     assert answer.status_code == 200
 
-    report = client.post(f"/api/v1/interviews/{interview_id}/complete")
+    report = client.post(f"/api/v1/interviews/{interview_id}/complete?access={access_token}")
     assert report.status_code == 200
 
     decision = client.post(

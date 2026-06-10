@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.models import Candidate, Interview, InterviewStatus, Job, NotificationDelivery, NotificationStatus
 from app.schemas import ReminderCandidatePreview
+from app.services.interview_access import InterviewAccessService
 from app.services.email_delivery import InterviewEmailDeliveryService
 
 
@@ -26,6 +27,7 @@ class DueReminder:
 class InterviewReminderAutomationService:
     def __init__(self) -> None:
         self.email_delivery = InterviewEmailDeliveryService()
+        self.interview_access = InterviewAccessService()
 
     def preview_due_reminders(self, db: Session, *, company_id: str) -> list[DueReminder]:
         interviews = db.execute(
@@ -66,7 +68,10 @@ class InterviewReminderAutomationService:
     def send_due_reminders(self, db: Session, *, company_id: str, recruiter_id: str) -> list[NotificationDelivery]:
         deliveries: list[NotificationDelivery] = []
         for item in self.preview_due_reminders(db, company_id=company_id):
-            subject, body = self._build_message(item)
+            try:
+                subject, body = self._build_message(item)
+            except ValueError:
+                continue
             delivery = self.email_delivery.send_notification(
                 db,
                 company_id=company_id,
@@ -116,6 +121,10 @@ class InterviewReminderAutomationService:
         if interview.status == InterviewStatus.completed.value:
             return False, None, None, None, 0
 
+        access_status = self.interview_access.status(interview)
+        if access_status.is_revoked:
+            return False, None, None, None, 0
+
         reminder_type = None
         reminder_reason = None
         threshold_hours = 0
@@ -161,7 +170,11 @@ class InterviewReminderAutomationService:
         return len(rows), self._ensure_utc(rows[0].created_at)
 
     def _build_message(self, item: DueReminder) -> tuple[str, str]:
-        portal_url = f"{settings.public_app_url.rstrip('/')}/interview/{item.interview.id}"
+        portal_url = self.interview_access.get_or_create_candidate_portal_url(
+            item.interview,
+            renew_if_missing=True,
+            renew_if_expired=True,
+        )
         if item.reminder_type == "interview_no_show_reminder":
             subject = f"Reminder: complete your HireOS interview for {item.job.title}"
             body = (
