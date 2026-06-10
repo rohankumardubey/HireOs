@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/lib/api";
-import type { InterviewInviteResponse, MatchResult } from "@/lib/types";
+import type { InterviewAccessLink, InterviewInviteResponse, MatchResult } from "@/lib/types";
 import { formatScore, titleCase } from "@/lib/utils";
 
 const decisionOptions = [
@@ -91,6 +91,11 @@ export default function CandidateDetailPage() {
     queryFn: () => api.getInterviewATSExports(auth.token as string, activeInterviewId as string),
     enabled: Boolean(auth.token && activeInterviewId),
   });
+  const accessLink = useQuery<InterviewAccessLink>({
+    queryKey: ["interview-access-link", auth.token, activeInterviewId],
+    queryFn: () => api.getInterviewAccessLink(auth.token as string, activeInterviewId as string),
+    enabled: Boolean(auth.token && activeInterviewId),
+  });
 
   const matchMutation = useMutation({
     mutationFn: () => api.matchCandidate(auth.token as string, candidateId, selectedJobId),
@@ -144,6 +149,36 @@ export default function CandidateDetailPage() {
       await atsExports.refetch();
     },
   });
+  const refreshAccessLinkMutation = useMutation({
+    mutationFn: () => api.refreshInterviewAccessLink(auth.token as string, activeInterviewId as string),
+    onSuccess: async (nextAccessLink) => {
+      setInviteResult((current) => {
+        if (!current || !nextAccessLink.candidate_portal_url) {
+          return current;
+        }
+
+        return {
+          ...current,
+          share_links: {
+            ...current.share_links,
+            candidate_portal_url: nextAccessLink.candidate_portal_url,
+            candidate_join_url:
+              current.mode === "video"
+                ? current.share_links.candidate_join_url
+                : nextAccessLink.candidate_portal_url,
+            candidate_portal_expires_at: nextAccessLink.expires_at || null,
+          },
+        };
+      });
+      await accessLink.refetch();
+    },
+  });
+  const revokeAccessLinkMutation = useMutation({
+    mutationFn: () => api.revokeInterviewAccessLink(auth.token as string, activeInterviewId as string),
+    onSuccess: async () => {
+      await accessLink.refetch();
+    },
+  });
 
   const inviteDisabled =
     !selectedJobId ||
@@ -162,6 +197,10 @@ export default function CandidateDetailPage() {
     recruiterDecisionMutation.isPending ||
     !reviewWorkspace.data?.can_record_decision ||
     !reviewWorkspace.data?.latest_interview?.id;
+  const currentPortalUrl =
+    accessLink.data?.candidate_portal_url ||
+    inviteResult?.share_links.candidate_portal_url ||
+    null;
 
   return (
     <AppShell
@@ -337,6 +376,15 @@ export default function CandidateDetailPage() {
                 <p className="mt-2 text-sm leading-7 text-muted">
                   {inviteResult.share_links.meeting_note}
                 </p>
+                {inviteResult.share_links.candidate_portal_expires_at ? (
+                  <p className="mt-2 text-sm text-muted">
+                    Secure candidate link expires on{" "}
+                    <span className="font-semibold text-text">
+                      {new Date(inviteResult.share_links.candidate_portal_expires_at).toLocaleString()}
+                    </span>
+                    .
+                  </p>
+                ) : null}
                 {inviteResult.share_links.scheduled_at ? (
                   <p className="mt-2 text-sm font-medium text-text">
                     {inviteResult.share_links.schedule_label}:{" "}
@@ -376,7 +424,7 @@ export default function CandidateDetailPage() {
                     href={
                       interviewMode === "video"
                         ? inviteResult.share_links.candidate_join_url
-                        : inviteResult.share_links.candidate_portal_url
+                        : currentPortalUrl || inviteResult.share_links.candidate_portal_url
                     }
                     target="_blank"
                     rel="noreferrer"
@@ -393,7 +441,7 @@ export default function CandidateDetailPage() {
                     href={
                       interviewMode === "video"
                         ? inviteResult.share_links.candidate_join_url
-                        : inviteResult.share_links.candidate_portal_url
+                        : currentPortalUrl || inviteResult.share_links.candidate_portal_url
                     }
                     target="_blank"
                     rel="noreferrer"
@@ -401,7 +449,7 @@ export default function CandidateDetailPage() {
                   >
                     {interviewMode === "video"
                       ? inviteResult.share_links.candidate_join_url
-                      : inviteResult.share_links.candidate_portal_url}
+                      : currentPortalUrl || inviteResult.share_links.candidate_portal_url}
                   </a>
                 </div>
                 {interviewMode === "video" ? (
@@ -410,15 +458,67 @@ export default function CandidateDetailPage() {
                       HireOS workflow reference
                     </p>
                     <a
-                      href={inviteResult.share_links.candidate_portal_url}
+                      href={currentPortalUrl || inviteResult.share_links.candidate_portal_url}
                       target="_blank"
                       rel="noreferrer"
                       className="mt-2 block font-semibold text-brand"
                     >
-                      {inviteResult.share_links.candidate_portal_url}
+                      {currentPortalUrl || inviteResult.share_links.candidate_portal_url}
                     </a>
                   </div>
                 ) : null}
+                <div className="mt-4 rounded-[20px] border border-border bg-white/80 px-4 py-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted-soft">
+                      Candidate access control
+                    </p>
+                    <Badge
+                      tone={
+                        accessLink.data?.is_revoked
+                          ? "danger"
+                          : accessLink.data?.is_expired
+                            ? "warning"
+                            : "success"
+                      }
+                    >
+                      {accessLink.data?.is_revoked
+                        ? "Revoked"
+                        : accessLink.data?.is_expired
+                          ? "Expired"
+                          : "Active"}
+                    </Badge>
+                  </div>
+                  <p className="mt-3 text-sm leading-7 text-muted">
+                    {accessLink.data?.note ||
+                      "HireOS uses a secure candidate magic link so the interview cannot be opened by anyone with just the interview ID."}
+                  </p>
+                  {accessLink.data?.expires_at ? (
+                    <p className="mt-2 text-sm text-muted">
+                      Current expiry:{" "}
+                      <span className="font-semibold text-text">
+                        {new Date(accessLink.data.expires_at).toLocaleString()}
+                      </span>
+                    </p>
+                  ) : null}
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => refreshAccessLinkMutation.mutate()}
+                      disabled={!activeInterviewId || refreshAccessLinkMutation.isPending}
+                      className="rounded-full border border-border bg-white/70 px-4 py-2 text-sm font-semibold text-text disabled:opacity-60"
+                    >
+                      {refreshAccessLinkMutation.isPending ? "Refreshing..." : "Refresh candidate link"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => revokeAccessLinkMutation.mutate()}
+                      disabled={!activeInterviewId || revokeAccessLinkMutation.isPending || accessLink.data?.is_revoked}
+                      className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 disabled:opacity-60"
+                    >
+                      {revokeAccessLinkMutation.isPending ? "Revoking..." : "Revoke link"}
+                    </button>
+                  </div>
+                </div>
                 <div className="mt-4 rounded-[20px] border border-border bg-white/80 px-4 py-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-xs uppercase tracking-[0.2em] text-muted-soft">
@@ -743,7 +843,7 @@ export default function CandidateDetailPage() {
             </p>
             <div className="mt-6 space-y-3">
               {reviewWorkspace.data?.audit_timeline?.length ? (
-                reviewWorkspace.data.audit_timeline.map((entry, index) => (
+                reviewWorkspace.data.audit_timeline.map((entry, index: number) => (
                   <div
                     key={`${entry.source}-${entry.action}-${index}`}
                     className="relative rounded-[22px] border border-border bg-white/70 px-4 py-4"

@@ -170,6 +170,7 @@ class InterviewShareLinks(BaseModel):
     meeting_provider_label: str
     candidate_email: EmailStr
     candidate_portal_url: str
+    candidate_portal_expires_at: datetime | None = None
     candidate_join_url: str
     meeting_setup_url: str
     email_compose_url: str
@@ -292,6 +293,7 @@ class InterviewRead(ORMModel):
 
 class InterviewStartRequest(BaseModel):
     consent_given: bool = True
+    access_token: str | None = None
 
 
 class InterviewQuestionRead(ORMModel):
@@ -312,6 +314,19 @@ class AnswerSubmitRequest(BaseModel):
     answer_mode: str = "text"
     transcript_text: str | None = None
     latency_ms: int = 0
+    access_token: str | None = None
+
+
+class InterviewAccessLinkRead(BaseModel):
+    candidate_portal_url: str | None = None
+    issued_at: datetime | None = None
+    expires_at: datetime | None = None
+    revoked_at: datetime | None = None
+    revoked_reason: str | None = None
+    is_active: bool
+    is_expired: bool
+    is_revoked: bool
+    note: str
 
 
 class AnswerScoreRead(ORMModel):

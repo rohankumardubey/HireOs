@@ -1,0 +1,11 @@
+{
+  "delivery_id": "17965e19-c899-4411-bd1f-fa60a88e3564",
+  "recipient_email": "nina@example.com",
+  "subject": "Reminder: complete your HireOS interview for Analytics Engineer",
+  "body_text": "Hi Nina NoShow,\n\nThis is a reminder to start your HireOS interview for the Analytics Engineer role.\n\nInterview link: http://localhost:3000/interview/804eab0c-5bfb-4e15-a14a-55ad2225681a?access=eyJpbnRlcnZpZXdfaWQiOiI4MDRlYWIwYy01YmZiLTRlMTUtYTE0YS01NWFkMjIyNTY4MWEiLCJub25jZSI6IjF2TEtkUjVFOFgya1pGbU8yN0FZZEhkbDFwdzBpTlA2IiwiaXNzdWVkX2F0IjoiMjAyNi0wNi0xMFQxNzo1MDoyNy4zOTE1NjkrMDA6MDAiLCJleHBpcmVzX2F0IjoiMjAyNi0wNi0xN1QxNzo1MDoyNy4zOTE1NjkrMDA6MDAifQ.4ed35325f79c59657b833ab09ec065ad26bea20e9bb27438f92a6c4c360e5c01\n\nIf you need more time or an accommodation, please reply to the recruiter.\n\nBest,\nHireOS AI Recruiting",
+  "metadata": {
+    "reminder_reason": "Candidate has not started the interview after the invite window elapsed.",
+    "job_title": "Analytics Engineer",
+    "last_activity_at": "2026-06-09T16:50:27.484750+00:00"
+  }
+}
