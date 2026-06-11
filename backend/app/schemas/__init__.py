@@ -414,6 +414,31 @@ class DecisionConsensusRead(BaseModel):
     signals: list[DecisionConsensusSignalRead] = Field(default_factory=list)
 
 
+class CalibrationCaseRead(BaseModel):
+    id: str
+    status: str
+    assigned_to_user_id: str | None = None
+    assigned_to_name: str | None = None
+    due_at: datetime | None = None
+    sla_status: str
+    resolution_summary: str | None = None
+    resolution_notes: str | None = None
+    resolved_by_user_id: str | None = None
+    resolved_by_name: str | None = None
+    resolved_at: datetime | None = None
+    updated_at: datetime
+
+
+class CalibrationCaseUpdateRequest(BaseModel):
+    status: str | None = None
+    assigned_to_user_id: str | None = None
+    assign_to_me: bool = False
+    clear_assignee: bool = False
+    due_at: datetime | None = None
+    resolution_summary: str | None = None
+    resolution_notes: str | None = None
+
+
 class ReviewTimelineEntry(BaseModel):
     timestamp: datetime
     source: str
@@ -436,6 +461,7 @@ class CandidateReviewWorkspaceRead(BaseModel):
     latest_manager_feedback: HiringManagerFeedbackRead | None = None
     manager_feedback_history: list[HiringManagerFeedbackRead] = Field(default_factory=list)
     decision_consensus: DecisionConsensusRead
+    calibration_case: CalibrationCaseRead | None = None
     audit_timeline: list[ReviewTimelineEntry] = Field(default_factory=list)
     can_record_decision: bool
     can_record_manager_feedback: bool
@@ -457,6 +483,7 @@ class CalibrationQueueEntryRead(BaseModel):
     agreement_score: float
     requires_escalation: bool
     priority: str
+    calibration_case: CalibrationCaseRead | None = None
     recommended_next_step: str | None = None
     conflict_reasons: list[str] = Field(default_factory=list)
     latest_signal_at: datetime

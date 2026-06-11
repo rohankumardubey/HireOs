@@ -59,6 +59,19 @@ function consensusTone(status?: string): BadgeTone {
   return "neutral";
 }
 
+function slaTone(status?: string): BadgeTone {
+  if (status === "overdue") {
+    return "danger";
+  }
+  if (status === "due_today") {
+    return "warning";
+  }
+  if (status === "resolved") {
+    return "success";
+  }
+  return "brand";
+}
+
 export default function CandidateDetailPage() {
   const auth = useAuth();
   const params = useParams<{ candidateId: string }>();
@@ -846,6 +859,59 @@ export default function CandidateDetailPage() {
                   </div>
                 </div>
               </div>
+              {reviewWorkspace.data?.calibration_case ? (
+                <div className="mt-4 rounded-[24px] border border-border bg-white/70 px-4 py-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-text">Calibration case</p>
+                      <p className="mt-2 text-sm leading-7 text-muted">
+                        This candidate has an active recruiter calibration case with ownership, SLA, and resolution context.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge tone={statusTone(reviewWorkspace.data.calibration_case.status)}>
+                        {titleCase(reviewWorkspace.data.calibration_case.status)}
+                      </Badge>
+                      <Badge tone={slaTone(reviewWorkspace.data.calibration_case.sla_status)}>
+                        {titleCase(reviewWorkspace.data.calibration_case.sla_status)}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-[20px] bg-surface-elevated px-4 py-4">
+                      <p className="text-xs uppercase tracking-[0.18em] text-muted-soft">Owner</p>
+                      <p className="mt-2 font-semibold text-text">
+                        {reviewWorkspace.data.calibration_case.assigned_to_name || "Unassigned"}
+                      </p>
+                    </div>
+                    <div className="rounded-[20px] bg-surface-elevated px-4 py-4">
+                      <p className="text-xs uppercase tracking-[0.18em] text-muted-soft">Due by</p>
+                      <p className="mt-2 font-semibold text-text">
+                        {reviewWorkspace.data.calibration_case.due_at
+                          ? new Date(reviewWorkspace.data.calibration_case.due_at).toLocaleString()
+                          : "Not set"}
+                      </p>
+                    </div>
+                    <div className="rounded-[20px] bg-surface-elevated px-4 py-4">
+                      <p className="text-xs uppercase tracking-[0.18em] text-muted-soft">Resolution</p>
+                      <p className="mt-2 font-semibold text-text">
+                        {reviewWorkspace.data.calibration_case.resolution_summary || "Pending"}
+                      </p>
+                    </div>
+                    <div className="rounded-[20px] bg-surface-elevated px-4 py-4">
+                      <p className="text-xs uppercase tracking-[0.18em] text-muted-soft">Resolved by</p>
+                      <p className="mt-2 font-semibold text-text">
+                        {reviewWorkspace.data.calibration_case.resolved_by_name || "Open case"}
+                      </p>
+                    </div>
+                  </div>
+                  {reviewWorkspace.data.calibration_case.resolution_notes ? (
+                    <p className="mt-4 text-sm leading-7 text-muted">
+                      {reviewWorkspace.data.calibration_case.resolution_notes}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
 
             <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_0.9fr]">

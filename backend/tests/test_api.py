@@ -884,8 +884,51 @@ def test_calibration_queue_prioritizes_conflicted_candidates() -> None:
     assert payload["entries"][0]["candidate_id"] == strong_candidate_id
     assert payload["entries"][0]["priority"] == "critical"
     assert payload["entries"][0]["consensus_status"] == "conflicted"
+    assert payload["entries"][0]["calibration_case"] is None
     assert payload["entries"][1]["candidate_id"] == weak_candidate_id
     assert payload["entries"][1]["priority"] == "medium"
+
+    case_update = client.patch(
+        f"/api/v1/candidates/{strong_candidate_id}/calibration-case/{job_id}",
+        headers=headers,
+        json={
+            "assign_to_me": True,
+            "status": "in_progress",
+            "resolution_summary": "Review in progress",
+            "resolution_notes": "Recruiter scheduled a compensation alignment discussion.",
+        },
+    )
+    assert case_update.status_code == 200
+    case_payload = case_update.json()
+    assert case_payload["assigned_to_name"] == "Queue Admin"
+    assert case_payload["status"] == "in_progress"
+    assert case_payload["sla_status"] in {"on_track", "due_today", "overdue"}
+
+    refreshed_queue = client.get("/api/v1/candidates/calibration-queue", headers=headers)
+    assert refreshed_queue.status_code == 200
+    refreshed_payload = refreshed_queue.json()
+    assert refreshed_payload["entries"][0]["calibration_case"]["status"] == "in_progress"
+    assert refreshed_payload["entries"][0]["calibration_case"]["resolution_summary"] == "Review in progress"
+
+    resolved_case = client.patch(
+        f"/api/v1/candidates/{strong_candidate_id}/calibration-case/{job_id}",
+        headers=headers,
+        json={
+            "status": "resolved",
+            "resolution_summary": "Closed after recruiter-manager calibration",
+            "resolution_notes": "The recruiter and hiring manager agreed to reject due to compensation limits.",
+        },
+    )
+    assert resolved_case.status_code == 200
+    assert resolved_case.json()["status"] == "resolved"
+    assert resolved_case.json()["resolved_by_name"] == "Queue Admin"
+    assert resolved_case.json()["resolved_at"] is not None
+
+    final_queue = client.get("/api/v1/candidates/calibration-queue", headers=headers)
+    assert final_queue.status_code == 200
+    final_payload = final_queue.json()
+    assert final_payload["total_items"] == 1
+    assert final_payload["entries"][0]["candidate_id"] == weak_candidate_id
 
 
 def test_candidate_review_workspace_handles_multiple_interviews_for_same_job() -> None:

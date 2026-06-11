@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import (
     AuditLog,
+    CalibrationCase,
     Candidate,
     CandidateJobMatch,
     EventOutbox,
@@ -17,6 +18,7 @@ from app.db.models import (
     User,
 )
 from app.schemas import (
+    CalibrationCaseRead,
     CalibrationQueueEntryRead,
     CalibrationQueueRead,
     CandidateReviewWorkspaceRead,
@@ -87,6 +89,15 @@ class CandidateReviewWorkspaceService:
             )
             for feedback, manager_name in manager_feedback_rows
         ]
+        calibration_case = db.execute(
+            select(CalibrationCase)
+            .where(
+                CalibrationCase.company_id == candidate.company_id,
+                CalibrationCase.candidate_id == candidate_id,
+                CalibrationCase.job_id == job_id,
+            )
+            .order_by(CalibrationCase.updated_at.desc())
+        ).scalars().first()
 
         audit_ids = {candidate.id, job.id}
         if match:
@@ -97,6 +108,8 @@ class CandidateReviewWorkspaceService:
                 audit_ids.add(interview.report.id)
         audit_ids.update(decision.id for decision, _ in decision_rows)
         audit_ids.update(feedback.id for feedback, _ in manager_feedback_rows)
+        if calibration_case:
+            audit_ids.add(calibration_case.id)
 
         actor_ids = {
             actor_id
@@ -104,6 +117,8 @@ class CandidateReviewWorkspaceService:
                 candidate.owner_id,
                 *(decision.recruiter_id for decision, _ in decision_rows),
                 *(feedback.hiring_manager_id for feedback, _ in manager_feedback_rows),
+                calibration_case.assigned_to_user_id if calibration_case else None,
+                calibration_case.resolved_by_user_id if calibration_case else None,
             ]
             if actor_id
         }
@@ -174,6 +189,13 @@ class CandidateReviewWorkspaceService:
             latest_manager_feedback=manager_feedback[0] if manager_feedback else None,
             latest_decision=decisions[0] if decisions else None,
         )
+        calibration_priority = self._calibration_priority_from_consensus(
+            consensus=decision_consensus,
+            latest_decision=decisions[0] if decisions else None,
+            latest_match=match,
+            latest_report=report,
+        )
+        latest_signal_at = timeline[0].timestamp if timeline else self._ensure_utc(candidate.updated_at)
 
         return CandidateReviewWorkspaceRead(
             candidate_id=candidate.id,
@@ -188,6 +210,13 @@ class CandidateReviewWorkspaceService:
             latest_manager_feedback=manager_feedback[0] if manager_feedback else None,
             manager_feedback_history=manager_feedback,
             decision_consensus=decision_consensus,
+            calibration_case=self._serialize_calibration_case(
+                calibration_case,
+                user_labels=user_labels,
+                default_due_at=self._default_due_at(calibration_priority or "medium", latest_signal_at),
+            )
+            if calibration_case
+            else None,
             audit_timeline=timeline[:16],
             can_record_decision=interview is not None,
             can_record_manager_feedback=interview is not None,
@@ -231,6 +260,22 @@ class CandidateReviewWorkspaceService:
                 if workspace.audit_timeline
                 else self._ensure_utc(candidate.updated_at)
             )
+            latest_non_case_signal_at = next(
+                (
+                    entry.timestamp
+                    for entry in workspace.audit_timeline
+                    if entry.action != "calibration.case_updated"
+                ),
+                latest_signal_at,
+            )
+            calibration_case = workspace.calibration_case
+            if (
+                calibration_case
+                and calibration_case.status == "resolved"
+                and calibration_case.resolved_at
+                and self._ensure_utc(calibration_case.resolved_at) >= latest_non_case_signal_at
+            ):
+                continue
 
             entries.append(
                 CalibrationQueueEntryRead(
@@ -250,6 +295,7 @@ class CandidateReviewWorkspaceService:
                     agreement_score=workspace.decision_consensus.agreement_score,
                     requires_escalation=workspace.decision_consensus.requires_escalation,
                     priority=priority,
+                    calibration_case=calibration_case,
                     recommended_next_step=workspace.latest_report.recommended_next_step if workspace.latest_report else None,
                     conflict_reasons=workspace.decision_consensus.conflict_reasons,
                     latest_signal_at=latest_signal_at,
@@ -424,20 +470,74 @@ class CandidateReviewWorkspaceService:
         return mapping.get(value, "review")
 
     def _calibration_priority(self, workspace: CandidateReviewWorkspaceRead) -> str | None:
-        consensus = workspace.decision_consensus
+        return self._calibration_priority_from_consensus(
+            consensus=workspace.decision_consensus,
+            latest_decision=workspace.latest_decision,
+            latest_match=workspace.latest_match,
+            latest_report=workspace.latest_report,
+        )
+
+    def _calibration_priority_from_consensus(
+        self,
+        *,
+        consensus: DecisionConsensusRead,
+        latest_decision: RecruiterDecisionRead | None,
+        latest_match,
+        latest_report,
+    ) -> str | None:
         if consensus.overall_status == "conflicted":
             return "critical"
         if consensus.overall_status == "mixed":
             return "high"
-        if workspace.latest_decision and workspace.latest_decision.override_ai_recommendation:
+        if latest_decision and latest_decision.override_ai_recommendation:
             return "high"
         if consensus.overall_status == "pending" and (
-            (workspace.latest_match and workspace.latest_match.human_review_required)
-            or (workspace.latest_report and workspace.latest_report.human_review_required)
-            or not workspace.latest_decision
+            (latest_match and latest_match.human_review_required)
+            or (latest_report and latest_report.human_review_required)
+            or not latest_decision
         ):
             return "medium"
         return None
+
+    def _serialize_calibration_case(
+        self,
+        calibration_case: CalibrationCase,
+        *,
+        user_labels: dict[str, str],
+        default_due_at: datetime,
+    ) -> CalibrationCaseRead:
+        due_at = self._ensure_utc(calibration_case.due_at) if calibration_case.due_at else default_due_at
+        return CalibrationCaseRead(
+            id=calibration_case.id,
+            status=calibration_case.status,
+            assigned_to_user_id=calibration_case.assigned_to_user_id,
+            assigned_to_name=user_labels.get(calibration_case.assigned_to_user_id) if calibration_case.assigned_to_user_id else None,
+            due_at=due_at,
+            sla_status=self._sla_status(calibration_case.status, due_at),
+            resolution_summary=calibration_case.resolution_summary,
+            resolution_notes=calibration_case.resolution_notes,
+            resolved_by_user_id=calibration_case.resolved_by_user_id,
+            resolved_by_name=user_labels.get(calibration_case.resolved_by_user_id) if calibration_case.resolved_by_user_id else None,
+            resolved_at=self._ensure_utc(calibration_case.resolved_at) if calibration_case.resolved_at else None,
+            updated_at=self._ensure_utc(calibration_case.updated_at),
+        )
+
+    def _default_due_at(self, priority: str, latest_signal_at: datetime) -> datetime:
+        if priority == "critical":
+            return latest_signal_at + timedelta(hours=4)
+        if priority == "high":
+            return latest_signal_at + timedelta(hours=24)
+        return latest_signal_at + timedelta(hours=48)
+
+    def _sla_status(self, status: str, due_at: datetime) -> str:
+        if status == "resolved":
+            return "resolved"
+        now = datetime.now(UTC)
+        if due_at < now:
+            return "overdue"
+        if due_at.date() == now.date():
+            return "due_today"
+        return "on_track"
 
     def _actor_label(self, *, actor_type: str | None, actor_id: str | None, candidate_name: str, user_labels: dict[str, str]) -> str:
         if actor_type == "candidate":

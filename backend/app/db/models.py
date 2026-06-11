@@ -366,6 +366,22 @@ class HiringManagerFeedback(Base, TimestampMixin):
     recommended_next_round: Mapped[str | None] = mapped_column(String(100))
 
 
+class CalibrationCase(Base, TimestampMixin):
+    __tablename__ = "calibration_cases"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    company_id: Mapped[str] = mapped_column(ForeignKey("companies.id"), index=True)
+    candidate_id: Mapped[str] = mapped_column(ForeignKey("candidates.id"), index=True)
+    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"), index=True)
+    assigned_to_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
+    status: Mapped[str] = mapped_column(String(50), default="open", index=True)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
+    resolution_summary: Mapped[str | None] = mapped_column(String(255))
+    resolution_notes: Mapped[str | None] = mapped_column(Text)
+    resolved_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
+
+
 class NotificationDelivery(Base, TimestampMixin):
     __tablename__ = "notification_deliveries"
 

@@ -30,6 +30,7 @@ Base path: `/api/v1`
 - `GET /candidates`
 - `GET /candidates/calibration-queue`
 - `GET /candidates/{candidate_id}`
+- `PATCH /candidates/{candidate_id}/calibration-case/{job_id}`
 - `POST /candidates/{candidate_id}/match-job/{job_id}`
 
 ## Interviews
