@@ -19,6 +19,7 @@
 - `hireos.interview.completed`
 - `hireos.report.generated`
 - `hireos.recruiter.decision_made`
+- `hireos.hiring_manager.feedback_recorded`
 - `hireos.error.events`
 
 ## Envelope
@@ -33,7 +34,7 @@
   "candidate_id": "uuid",
   "interview_id": "uuid",
   "actor_id": "uuid",
-  "actor_type": "candidate|recruiter|system",
+  "actor_type": "candidate|recruiter|hiring_manager|system",
   "source": "hireos-ai",
   "schema_version": "1.0",
   "payload": {}

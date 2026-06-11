@@ -644,6 +644,22 @@ def test_candidate_review_workspace_includes_decision_history_and_timeline() -> 
     )
     assert decision.status_code == 200
 
+    manager_feedback = client.post(
+        f"/api/v1/interviews/{interview_id}/hiring-manager-feedback",
+        headers=headers,
+        json={
+            "recommendation": "strong_yes",
+            "notes": "Would like to meet this candidate in an architecture deep dive.",
+            "recommended_next_round": "Architecture deep dive",
+        },
+    )
+    assert manager_feedback.status_code == 200
+    assert manager_feedback.json()["feedback"]["recommendation"] == "strong_yes"
+
+    manager_feedback_list = client.get(f"/api/v1/interviews/{interview_id}/hiring-manager-feedback", headers=headers)
+    assert manager_feedback_list.status_code == 200
+    assert len(manager_feedback_list.json()) == 1
+
     workspace = client.get(f"/api/v1/candidates/{candidate_id}/review-workspace/{job_id}", headers=headers)
     assert workspace.status_code == 200
     payload = workspace.json()
@@ -653,7 +669,11 @@ def test_candidate_review_workspace_includes_decision_history_and_timeline() -> 
     assert payload["latest_decision"]["decision"] == "shortlisted"
     assert payload["latest_decision"]["override_ai_recommendation"] is True
     assert payload["decision_history"]
+    assert payload["latest_manager_feedback"]["recommendation"] == "strong_yes"
+    assert payload["manager_feedback_history"]
+    assert payload["can_record_manager_feedback"] is True
     assert any(entry["action"] == "recruiter.decision_made" for entry in payload["audit_timeline"])
+    assert any(entry["action"] == "hiring_manager.feedback_recorded" for entry in payload["audit_timeline"])
 
 
 def test_candidate_review_workspace_handles_multiple_interviews_for_same_job() -> None:

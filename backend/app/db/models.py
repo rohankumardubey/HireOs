@@ -353,6 +353,19 @@ class RecruiterDecision(Base, TimestampMixin):
     override_ai_recommendation: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class HiringManagerFeedback(Base, TimestampMixin):
+    __tablename__ = "hiring_manager_feedback"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    interview_id: Mapped[str] = mapped_column(ForeignKey("interviews.id"), index=True)
+    candidate_id: Mapped[str] = mapped_column(ForeignKey("candidates.id"), index=True)
+    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"), index=True)
+    hiring_manager_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    recommendation: Mapped[str] = mapped_column(String(50))
+    notes: Mapped[str | None] = mapped_column(Text)
+    recommended_next_round: Mapped[str | None] = mapped_column(String(100))
+
+
 class NotificationDelivery(Base, TimestampMixin):
     __tablename__ = "notification_deliveries"
 

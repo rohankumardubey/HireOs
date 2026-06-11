@@ -5,9 +5,20 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.db.models import AuditLog, Candidate, CandidateJobMatch, EventOutbox, Interview, Job, RecruiterDecision, User
+from app.db.models import (
+    AuditLog,
+    Candidate,
+    CandidateJobMatch,
+    EventOutbox,
+    HiringManagerFeedback,
+    Interview,
+    Job,
+    RecruiterDecision,
+    User,
+)
 from app.schemas import (
     CandidateReviewWorkspaceRead,
+    HiringManagerFeedbackRead,
     InterviewRead,
     MatchResultRead,
     RecruiterDecisionRead,
@@ -54,6 +65,24 @@ class CandidateReviewWorkspaceService:
             )
             for decision, recruiter_name in decision_rows
         ]
+        manager_feedback_rows = db.execute(
+            select(HiringManagerFeedback, User.full_name)
+            .join(User, User.id == HiringManagerFeedback.hiring_manager_id)
+            .where(HiringManagerFeedback.candidate_id == candidate_id, HiringManagerFeedback.job_id == job_id)
+            .order_by(HiringManagerFeedback.created_at.desc())
+        ).all()
+        manager_feedback = [
+            HiringManagerFeedbackRead(
+                id=feedback.id,
+                recommendation=feedback.recommendation,
+                notes=feedback.notes,
+                recommended_next_round=feedback.recommended_next_round,
+                hiring_manager_id=feedback.hiring_manager_id,
+                hiring_manager_name=manager_name,
+                created_at=feedback.created_at,
+            )
+            for feedback, manager_name in manager_feedback_rows
+        ]
 
         audit_ids = {candidate.id, job.id}
         if match:
@@ -63,8 +92,17 @@ class CandidateReviewWorkspaceService:
             if interview.report:
                 audit_ids.add(interview.report.id)
         audit_ids.update(decision.id for decision, _ in decision_rows)
+        audit_ids.update(feedback.id for feedback, _ in manager_feedback_rows)
 
-        actor_ids = {actor_id for actor_id in [candidate.owner_id, *(decision.recruiter_id for decision, _ in decision_rows)] if actor_id}
+        actor_ids = {
+            actor_id
+            for actor_id in [
+                candidate.owner_id,
+                *(decision.recruiter_id for decision, _ in decision_rows),
+                *(feedback.hiring_manager_id for feedback, _ in manager_feedback_rows),
+            ]
+            if actor_id
+        }
         audit_logs = db.execute(
             select(AuditLog).where(AuditLog.entity_id.in_(audit_ids)).order_by(AuditLog.created_at.desc())
         ).scalars().all()
@@ -137,19 +175,22 @@ class CandidateReviewWorkspaceService:
             latest_report=ReportRead.model_validate(report) if report else None,
             latest_decision=decisions[0] if decisions else None,
             decision_history=decisions,
+            latest_manager_feedback=manager_feedback[0] if manager_feedback else None,
+            manager_feedback_history=manager_feedback,
             audit_timeline=timeline[:16],
             can_record_decision=interview is not None,
+            can_record_manager_feedback=interview is not None,
             decision_support_note=(
-                "Recruiter decisions are the final workflow action. AI outputs remain decision-support signals, "
-                "and every override should be documented with human reasoning."
+                "Recruiter decisions are the final workflow action. Hiring managers can add recommendation notes, "
+                "but AI outputs remain decision-support signals and every override should be documented with human reasoning."
             ),
         )
 
     def _actor_label(self, *, actor_type: str | None, actor_id: str | None, candidate_name: str, user_labels: dict[str, str]) -> str:
         if actor_type == "candidate":
             return candidate_name
-        if actor_type == "recruiter" and actor_id:
-            return user_labels.get(actor_id, "Recruiter")
+        if actor_type in {"recruiter", "hiring_manager", "admin"} and actor_id:
+            return user_labels.get(actor_id, "Team member")
         return "HireOS AI"
 
     def _summarize_event(self, event_type: str, payload: dict) -> str:
@@ -167,6 +208,7 @@ class CandidateReviewWorkspaceService:
             "interview.completed": "Interview was completed and locked for reporting.",
             "report.generated": "Recruiter report was generated from the interview.",
             "recruiter.decision_made": "Recruiter recorded a final pipeline decision.",
+            "hiring_manager.feedback_recorded": "Hiring manager feedback was captured for the review loop.",
         }
         if event_type in summaries:
             return summaries[event_type]
@@ -180,6 +222,9 @@ class CandidateReviewWorkspaceService:
         if action == "recruiter.decision_made":
             decision = str(details.get("decision", "review")).replace("_", " ")
             return f"Recruiter marked the candidate as {decision}."
+        if action == "hiring_manager.feedback_recorded":
+            recommendation = str(details.get("recommendation", "hold")).replace("_", " ")
+            return f"Hiring manager recommended {recommendation}."
         return action.replace(".", " ").replace("_", " ").title()
 
     def _summarize_report_step(self, step: dict) -> str:

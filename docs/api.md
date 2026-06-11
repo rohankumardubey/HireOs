@@ -44,6 +44,8 @@ Base path: `/api/v1`
 - `POST /interviews/{interview_id}/complete`
 - `GET /interviews/{interview_id}/report`
 - `POST /interviews/{interview_id}/decision`
+- `GET /interviews/{interview_id}/hiring-manager-feedback`
+- `POST /interviews/{interview_id}/hiring-manager-feedback`
 - `GET /interviews/{interview_id}/ats-exports`
 - `POST /interviews/{interview_id}/export-ats`
 

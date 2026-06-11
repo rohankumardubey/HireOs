@@ -376,6 +376,27 @@ class RecruiterDecisionRead(BaseModel):
     created_at: datetime
 
 
+class HiringManagerFeedbackRequest(BaseModel):
+    recommendation: str
+    notes: str | None = None
+    recommended_next_round: str | None = None
+
+
+class HiringManagerFeedbackRead(BaseModel):
+    id: str
+    recommendation: str
+    notes: str | None = None
+    recommended_next_round: str | None = None
+    hiring_manager_id: str
+    hiring_manager_name: str
+    created_at: datetime
+
+
+class HiringManagerFeedbackResponse(BaseModel):
+    status: str
+    feedback: HiringManagerFeedbackRead
+
+
 class ReviewTimelineEntry(BaseModel):
     timestamp: datetime
     source: str
@@ -395,8 +416,11 @@ class CandidateReviewWorkspaceRead(BaseModel):
     latest_report: ReportRead | None = None
     latest_decision: RecruiterDecisionRead | None = None
     decision_history: list[RecruiterDecisionRead] = Field(default_factory=list)
+    latest_manager_feedback: HiringManagerFeedbackRead | None = None
+    manager_feedback_history: list[HiringManagerFeedbackRead] = Field(default_factory=list)
     audit_timeline: list[ReviewTimelineEntry] = Field(default_factory=list)
     can_record_decision: bool
+    can_record_manager_feedback: bool
     decision_support_note: str
 
 
