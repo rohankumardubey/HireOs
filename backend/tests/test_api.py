@@ -1860,6 +1860,132 @@ def test_interview_reminder_preview_and_run() -> None:
     assert len(run_payload["deliveries"]) == 2
 
 
+def test_calibration_reminder_preview_and_run() -> None:
+    client = TestClient(main_module.app)
+    email = f"calibration-reminders+{uuid4().hex[:8]}@hireos.ai"
+    company = f"Calibration Reminder Co {uuid4().hex[:6]}"
+    signup = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "full_name": "Calibration Admin",
+            "email": email,
+            "password": "Demo@123",
+            "company_name": company,
+            "role": "admin",
+        },
+    )
+    assert signup.status_code == 200
+    token = signup.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    job = client.post(
+        "/api/v1/jobs",
+        headers=headers,
+        json={
+            "title": "Data Engineer",
+            "department": "Platform",
+            "location": "Remote",
+            "work_mode": "remote",
+            "experience_range": "4-7 years",
+            "employment_type": "full-time",
+            "salary_range": "$140k-$170k",
+            "status": "open",
+            "job_description": "Build pipelines with Python, SQL, Kafka, and Airflow.",
+            "required_skills": ["python", "sql", "kafka", "airflow"],
+            "preferred_skills": ["dbt"],
+        },
+    )
+    assert job.status_code == 200
+    job_id = job.json()["id"]
+
+    upload = client.post(
+        "/api/v1/candidates/upload-resume",
+        headers=headers,
+        files={"file": ("resume.txt", b"Casey Conflict\ncasey@example.com\nPython SQL Kafka Airflow\n", "text/plain")},
+        data={"name": "Casey Conflict", "email": "casey@example.com", "location": "Remote"},
+    )
+    assert upload.status_code == 200
+    candidate_id = upload.json()["candidate"]["id"]
+
+    match = client.post(f"/api/v1/candidates/{candidate_id}/match-job/{job_id}", headers=headers)
+    assert match.status_code == 200
+    assert match.json()["match_recommendation"] == "strong_match"
+
+    invite = client.post(
+        "/api/v1/interviews/invite",
+        headers=headers,
+        json={
+            "candidate_id": candidate_id,
+            "job_id": job_id,
+            "interview_type": "Technical screening",
+            "mode": "text",
+        },
+    )
+    assert invite.status_code == 200
+    interview_id = invite.json()["id"]
+    assert interview_id
+
+    manager_feedback = client.post(
+        f"/api/v1/interviews/{interview_id}/hiring-manager-feedback",
+        headers=headers,
+        json={
+            "recommendation": "strong_yes",
+            "notes": "Hiring manager wants to move quickly.",
+            "recommended_next_round": "Architecture panel",
+        },
+    )
+    assert manager_feedback.status_code == 200
+
+    recruiter_decision = client.post(
+        f"/api/v1/interviews/{interview_id}/decision",
+        headers=headers,
+        json={
+            "decision": "rejected",
+            "notes": "Recruiter wants a calibration review before proceeding.",
+            "override_ai_recommendation": True,
+        },
+    )
+    assert recruiter_decision.status_code == 200
+
+    overdue_due_at = datetime.now(UTC) - timedelta(hours=3)
+    case_update = client.patch(
+        f"/api/v1/candidates/{candidate_id}/calibration-case/{job_id}",
+        headers=headers,
+        json={
+            "assign_to_me": True,
+            "status": "in_progress",
+            "due_at": overdue_due_at.isoformat(),
+            "resolution_summary": "Waiting for calibration",
+            "resolution_notes": "Signals disagree and need recruiter follow-up.",
+        },
+    )
+    assert case_update.status_code == 200
+    assert case_update.json()["sla_status"] == "overdue"
+
+    preview = client.get("/api/v1/candidates/calibration-queue/reminders/preview", headers=headers)
+    assert preview.status_code == 200
+    preview_payload = preview.json()
+    assert preview_payload["overdue_count"] == 1
+    assert preview_payload["due_today_count"] == 0
+    assert len(preview_payload["cases"]) == 1
+    assert preview_payload["cases"][0]["candidate_id"] == candidate_id
+    assert preview_payload["cases"][0]["recipient_email"] == email
+    assert preview_payload["cases"][0]["priority"] == "critical"
+    assert preview_payload["cases"][0]["sla_status"] == "overdue"
+
+    run = client.post("/api/v1/candidates/calibration-queue/reminders/run", headers=headers)
+    assert run.status_code == 200
+    run_payload = run.json()
+    assert run_payload["fallback_count"] + run_payload["sent_count"] == 1
+    assert run_payload["failed_count"] == 0
+    assert len(run_payload["deliveries"]) == 1
+    assert run_payload["deliveries"][0]["notification_type"].startswith("calibration_case_reminder:")
+
+    follow_up_preview = client.get("/api/v1/candidates/calibration-queue/reminders/preview", headers=headers)
+    assert follow_up_preview.status_code == 200
+    assert follow_up_preview.json()["cases"] == []
+
+
 def test_ats_webhook_export_flows_from_recruiter_decision(monkeypatch) -> None:
     client = TestClient(main_module.app)
     email = f"ats+{uuid4().hex[:8]}@hireos.ai"

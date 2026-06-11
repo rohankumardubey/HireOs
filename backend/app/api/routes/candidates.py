@@ -15,12 +15,16 @@ from app.schemas import (
     CalibrationCaseRead,
     CalibrationCaseUpdateRequest,
     CalibrationQueueRead,
+    CalibrationReminderPreviewResponse,
+    CalibrationReminderRunResponse,
     CandidateCreate,
     CandidateRead,
     CandidateReviewWorkspaceRead,
     MatchResultRead,
+    NotificationDeliveryRead,
 )
 from app.services.events import EventPublisher, log_audit
+from app.services.calibration_reminders import CalibrationReminderService
 from app.services.fairness_guard import FairnessGuard
 from app.services.parsers import extract_text_from_upload, parse_resume_text
 from app.services.review_workspace import CandidateReviewWorkspaceService
@@ -31,6 +35,7 @@ events = EventPublisher()
 ai = HiringIntelligenceService()
 review_workspace = CandidateReviewWorkspaceService()
 fairness_guard = FairnessGuard()
+calibration_reminders = CalibrationReminderService()
 
 
 @router.post("", response_model=CandidateRead)
@@ -167,6 +172,72 @@ def get_calibration_queue(
     return review_workspace.build_calibration_queue(db, company_id=membership.company_id)
 
 
+@router.get("/calibration-queue/reminders/preview", response_model=CalibrationReminderPreviewResponse)
+def preview_calibration_reminders(
+    current_user=Depends(require_roles("admin", "recruiter", "hiring_manager")),
+    db: Session = Depends(get_db),
+) -> CalibrationReminderPreviewResponse:
+    membership = get_primary_membership(current_user, db)
+    due = calibration_reminders.preview_due_reminders(db, company_id=membership.company_id)
+    previews = [calibration_reminders.to_preview_schema(item) for item in due]
+    return CalibrationReminderPreviewResponse(
+        overdue_count=sum(1 for item in previews if item.sla_status == "overdue"),
+        due_today_count=sum(1 for item in previews if item.sla_status == "due_today"),
+        cases=previews,
+        policy_note=(
+            "Calibration reminders only notify overdue or due-today cases, respect a 12-hour cooldown, "
+            "and stop after two successful sends per case unless new activity reopens the workflow."
+        ),
+    )
+
+
+@router.post("/calibration-queue/reminders/run", response_model=CalibrationReminderRunResponse)
+def run_calibration_reminders(
+    current_user=Depends(require_roles("admin", "recruiter")),
+    db: Session = Depends(get_db),
+) -> CalibrationReminderRunResponse:
+    membership = get_primary_membership(current_user, db)
+    deliveries = calibration_reminders.send_due_reminders(
+        db,
+        company_id=membership.company_id,
+        recruiter_id=current_user.id,
+    )
+    for delivery in deliveries:
+        events.publish(
+            db,
+            event_type="calibration.reminder_sent",
+            topic_name="hireos.calibration.reminder_sent",
+            company_id=membership.company_id,
+            candidate_id=delivery.candidate_id,
+            actor_id=current_user.id,
+            actor_type="recruiter",
+            payload={
+                "status": delivery.status,
+                "notification_type": delivery.notification_type,
+                "recipient_email": delivery.recipient_email,
+            },
+        )
+        log_audit(
+            db,
+            current_user.id,
+            "notification_delivery",
+            delivery.id,
+            "calibration.reminder_sent",
+            {
+                "recipient_email": delivery.recipient_email,
+                "status": delivery.status,
+                "notification_type": delivery.notification_type,
+            },
+        )
+    db.commit()
+    return CalibrationReminderRunResponse(
+        sent_count=sum(1 for delivery in deliveries if delivery.status == "delivered"),
+        fallback_count=sum(1 for delivery in deliveries if delivery.status == "fallback"),
+        failed_count=sum(1 for delivery in deliveries if delivery.status == "failed"),
+        deliveries=[NotificationDeliveryRead.model_validate(delivery) for delivery in deliveries],
+    )
+
+
 @router.patch("/{candidate_id}/calibration-case/{job_id}", response_model=CalibrationCaseRead)
 def update_calibration_case(
     candidate_id: str,
@@ -245,7 +316,7 @@ def update_calibration_case(
         "calibration_case",
         calibration_case.id,
         "calibration.case_updated",
-        payload.model_dump(),
+        payload.model_dump(mode="json"),
     )
     events.publish(
         db,
