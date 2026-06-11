@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.db.models import Candidate, CandidateJobMatch, CandidateResume, CandidateSkill, Job
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user, get_primary_membership, require_roles
-from app.schemas import CandidateCreate, CandidateRead, CandidateReviewWorkspaceRead, MatchResultRead
+from app.schemas import CalibrationQueueRead, CandidateCreate, CandidateRead, CandidateReviewWorkspaceRead, MatchResultRead
 from app.services.events import EventPublisher, log_audit
 from app.services.fairness_guard import FairnessGuard
 from app.services.parsers import extract_text_from_upload, parse_resume_text
@@ -147,6 +147,15 @@ def list_candidates(current_user=Depends(get_current_user), db: Session = Depend
     membership = get_primary_membership(current_user, db)
     candidates = db.execute(select(Candidate).where(Candidate.company_id == membership.company_id).order_by(Candidate.created_at.desc())).scalars()
     return [CandidateRead.model_validate(candidate) for candidate in candidates]
+
+
+@router.get("/calibration-queue", response_model=CalibrationQueueRead)
+def get_calibration_queue(
+    current_user=Depends(require_roles("admin", "recruiter", "hiring_manager")),
+    db: Session = Depends(get_db),
+) -> CalibrationQueueRead:
+    membership = get_primary_membership(current_user, db)
+    return review_workspace.build_calibration_queue(db, company_id=membership.company_id)
 
 
 @router.get("/{candidate_id}", response_model=CandidateRead)

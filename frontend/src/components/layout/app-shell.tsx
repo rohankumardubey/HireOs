@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  AlertTriangle,
   BarChart3,
   Bot,
   BriefcaseBusiness,
@@ -25,6 +26,7 @@ const nav = [
   { href: "/candidates", label: "Candidates", icon: Users2 },
   { href: "/copilot", label: "Copilot", icon: Bot },
   { href: "/compare", label: "Compare", icon: GitCompareArrows },
+  { href: "/calibration", label: "Calibration", icon: AlertTriangle },
   { href: "/ranking", label: "Ranking", icon: BarChart3 },
   { href: "/reports", label: "Reports", icon: FileText },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },

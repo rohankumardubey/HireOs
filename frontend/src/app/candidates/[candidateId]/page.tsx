@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
@@ -62,8 +62,10 @@ function consensusTone(status?: string): BadgeTone {
 export default function CandidateDetailPage() {
   const auth = useAuth();
   const params = useParams<{ candidateId: string }>();
+  const searchParams = useSearchParams();
   const candidateId = params.candidateId;
-  const [selectedJobId, setSelectedJobId] = useState("");
+  const requestedJobId = searchParams.get("job") || "";
+  const [selectedJobId, setSelectedJobId] = useState(requestedJobId);
   const [interviewMode, setInterviewMode] = useState("text");
   const [scheduleType, setScheduleType] = useState("adhoc");
   const [scheduledAt, setScheduledAt] = useState("");

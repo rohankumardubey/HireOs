@@ -17,6 +17,8 @@ from app.db.models import (
     User,
 )
 from app.schemas import (
+    CalibrationQueueEntryRead,
+    CalibrationQueueRead,
     CandidateReviewWorkspaceRead,
     DecisionConsensusRead,
     DecisionConsensusSignalRead,
@@ -195,6 +197,82 @@ class CandidateReviewWorkspaceService:
             ),
         )
 
+    def build_calibration_queue(self, db: Session, *, company_id: str) -> CalibrationQueueRead:
+        pair_keys: set[tuple[str, str]] = set()
+
+        match_pairs = db.execute(
+            select(CandidateJobMatch.candidate_id, CandidateJobMatch.job_id)
+            .join(Candidate, Candidate.id == CandidateJobMatch.candidate_id)
+            .where(Candidate.company_id == company_id)
+        ).all()
+        interview_pairs = db.execute(
+            select(Interview.candidate_id, Interview.job_id).where(Interview.company_id == company_id)
+        ).all()
+
+        pair_keys.update((candidate_id, job_id) for candidate_id, job_id in match_pairs)
+        pair_keys.update((candidate_id, job_id) for candidate_id, job_id in interview_pairs)
+
+        entries: list[CalibrationQueueEntryRead] = []
+        for candidate_id, job_id in pair_keys:
+            workspace = self.build(db, candidate_id=candidate_id, job_id=job_id)
+            if not workspace:
+                continue
+
+            candidate = db.get(Candidate, candidate_id)
+            if not candidate:
+                continue
+
+            priority = self._calibration_priority(workspace)
+            if not priority:
+                continue
+
+            latest_signal_at = (
+                workspace.audit_timeline[0].timestamp
+                if workspace.audit_timeline
+                else self._ensure_utc(candidate.updated_at)
+            )
+
+            entries.append(
+                CalibrationQueueEntryRead(
+                    candidate_id=candidate.id,
+                    candidate_name=candidate.name,
+                    candidate_email=candidate.email,
+                    candidate_status=workspace.status,
+                    current_role=candidate.current_role,
+                    job_id=workspace.job_id,
+                    job_title=workspace.job_title,
+                    ai_recommendation=workspace.latest_match.match_recommendation if workspace.latest_match else None,
+                    recruiter_decision=workspace.latest_decision.decision if workspace.latest_decision else None,
+                    hiring_manager_recommendation=(
+                        workspace.latest_manager_feedback.recommendation if workspace.latest_manager_feedback else None
+                    ),
+                    consensus_status=workspace.decision_consensus.overall_status,
+                    agreement_score=workspace.decision_consensus.agreement_score,
+                    requires_escalation=workspace.decision_consensus.requires_escalation,
+                    priority=priority,
+                    recommended_next_step=workspace.latest_report.recommended_next_step if workspace.latest_report else None,
+                    conflict_reasons=workspace.decision_consensus.conflict_reasons,
+                    latest_signal_at=latest_signal_at,
+                )
+            )
+
+        priority_rank = {"critical": 0, "high": 1, "medium": 2}
+        entries.sort(
+            key=lambda item: (
+                priority_rank.get(item.priority, 99),
+                item.agreement_score,
+                -item.latest_signal_at.timestamp(),
+            )
+        )
+
+        return CalibrationQueueRead(
+            total_items=len(entries),
+            conflicted_count=sum(1 for entry in entries if entry.consensus_status == "conflicted"),
+            mixed_count=sum(1 for entry in entries if entry.consensus_status == "mixed"),
+            pending_count=sum(1 for entry in entries if entry.consensus_status == "pending"),
+            entries=entries,
+        )
+
     def _build_decision_consensus(
         self,
         *,
@@ -344,6 +422,22 @@ class CandidateReviewWorkspaceService:
             "archived": "reject",
         }
         return mapping.get(value, "review")
+
+    def _calibration_priority(self, workspace: CandidateReviewWorkspaceRead) -> str | None:
+        consensus = workspace.decision_consensus
+        if consensus.overall_status == "conflicted":
+            return "critical"
+        if consensus.overall_status == "mixed":
+            return "high"
+        if workspace.latest_decision and workspace.latest_decision.override_ai_recommendation:
+            return "high"
+        if consensus.overall_status == "pending" and (
+            (workspace.latest_match and workspace.latest_match.human_review_required)
+            or (workspace.latest_report and workspace.latest_report.human_review_required)
+            or not workspace.latest_decision
+        ):
+            return "medium"
+        return None
 
     def _actor_label(self, *, actor_type: str | None, actor_id: str | None, candidate_name: str, user_labels: dict[str, str]) -> str:
         if actor_type == "candidate":
