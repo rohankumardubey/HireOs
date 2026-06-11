@@ -13,6 +13,7 @@ HireOS AI is built as a production-style SaaS starter, not a demo chatbot. It co
 - Shows recruiter dashboards, candidate ranking, analytics, and override-friendly human review workflows
 - Captures hiring manager recommendations separately from recruiter final decisions so collaborative review never removes recruiter control
 - Shows a calibration-style consensus scorecard so teams can see when AI, hiring manager, and recruiter signals align or need escalation
+- Adds a recruiter calibration queue so conflicted or low-alignment candidates can be worked from one place instead of getting lost across profiles
 - Pushes recruiter-approved shortlist decisions into external ATS/webhook systems with delivery history and manual retry
 - Protects candidate interview access with expiring magic links that recruiters can refresh or revoke without exposing interview IDs alone
 - Emits lifecycle events to Kafka when available, or local JSONL when running lightweight
@@ -193,6 +194,15 @@ What happens:
   - `Recruiter` final decision
 - HireOS computes an agreement score, flags whether escalation is required, and lists the specific conflicts that need calibration
 - This helps teams catch cases where one reviewer advances a candidate while another rejects them, even if the AI score looks strong
+
+### Calibration queue
+
+- Open `/calibration` to see all candidate-job pairs that currently need recruiter calibration
+- The queue prioritizes:
+  - `critical`: direct advance-versus-reject conflicts
+  - `high`: mixed signals or explicit recruiter overrides
+  - `medium`: pending human-review cases without enough aligned evidence yet
+- Each row links directly into the candidate workspace with the relevant job preselected
 
 ## Demo flow
 

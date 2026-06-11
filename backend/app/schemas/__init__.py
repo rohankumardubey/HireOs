@@ -442,6 +442,34 @@ class CandidateReviewWorkspaceRead(BaseModel):
     decision_support_note: str
 
 
+class CalibrationQueueEntryRead(BaseModel):
+    candidate_id: str
+    candidate_name: str
+    candidate_email: str
+    candidate_status: str
+    current_role: str | None = None
+    job_id: str
+    job_title: str
+    ai_recommendation: str | None = None
+    recruiter_decision: str | None = None
+    hiring_manager_recommendation: str | None = None
+    consensus_status: str
+    agreement_score: float
+    requires_escalation: bool
+    priority: str
+    recommended_next_step: str | None = None
+    conflict_reasons: list[str] = Field(default_factory=list)
+    latest_signal_at: datetime
+
+
+class CalibrationQueueRead(BaseModel):
+    total_items: int
+    conflicted_count: int
+    mixed_count: int
+    pending_count: int
+    entries: list[CalibrationQueueEntryRead] = Field(default_factory=list)
+
+
 class RankingEntry(BaseModel):
     rank: int
     candidate_id: str

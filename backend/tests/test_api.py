@@ -776,6 +776,118 @@ def test_candidate_review_workspace_flags_conflicted_consensus() -> None:
     assert "Hiring manager feedback differs from the recruiter decision." in payload["decision_consensus"]["conflict_reasons"]
 
 
+def test_calibration_queue_prioritizes_conflicted_candidates() -> None:
+    client = TestClient(main_module.app)
+    email = f"queue+{uuid4().hex[:8]}@hireos.ai"
+    company = f"Queue Co {uuid4().hex[:6]}"
+    signup = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "full_name": "Queue Admin",
+            "email": email,
+            "password": "Demo@123",
+            "company_name": company,
+            "role": "admin",
+        },
+    )
+    assert signup.status_code == 200
+    token = signup.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    job = client.post(
+        "/api/v1/jobs",
+        headers=headers,
+        json={
+            "title": "Data Engineer",
+            "department": "Data",
+            "location": "Remote",
+            "work_mode": "remote",
+            "experience_range": "3-7 years",
+            "employment_type": "full-time",
+            "salary_range": "$130k-$170k",
+            "status": "open",
+            "job_description": "Build Python, PostgreSQL, Kafka, and dbt pipelines.",
+            "required_skills": ["python", "postgresql", "kafka", "dbt"],
+            "preferred_skills": ["airflow"],
+        },
+    )
+    assert job.status_code == 200
+    job_id = job.json()["id"]
+
+    strong_candidate = client.post(
+        "/api/v1/candidates/upload-resume",
+        headers=headers,
+        files={"file": ("resume.txt", b"Alex Strong\nalex@example.com\nData Engineer\nPython PostgreSQL Kafka dbt airflow\n", "text/plain")},
+        data={"name": "Alex Strong", "email": "alex@example.com", "location": "Remote"},
+    )
+    assert strong_candidate.status_code == 200
+    strong_candidate_id = strong_candidate.json()["candidate"]["id"]
+
+    weak_candidate = client.post(
+        "/api/v1/candidates/upload-resume",
+        headers=headers,
+        files={"file": ("resume.txt", b"Taylor Pending\ntaylor@example.com\nAnalyst\nExcel SQL\n", "text/plain")},
+        data={"name": "Taylor Pending", "email": "taylor@example.com", "location": "Remote"},
+    )
+    assert weak_candidate.status_code == 200
+    weak_candidate_id = weak_candidate.json()["candidate"]["id"]
+
+    strong_match = client.post(f"/api/v1/candidates/{strong_candidate_id}/match-job/{job_id}", headers=headers)
+    assert strong_match.status_code == 200
+    assert strong_match.json()["match_recommendation"] == "strong_match"
+
+    weak_match = client.post(f"/api/v1/candidates/{weak_candidate_id}/match-job/{job_id}", headers=headers)
+    assert weak_match.status_code == 200
+
+    invite = client.post(
+        "/api/v1/interviews/invite",
+        headers=headers,
+        json={
+            "candidate_id": strong_candidate_id,
+            "job_id": job_id,
+            "interview_type": "Technical screening",
+            "mode": "text",
+        },
+    )
+    assert invite.status_code == 200
+    interview_id = invite.json()["id"]
+
+    manager_feedback = client.post(
+        f"/api/v1/interviews/{interview_id}/hiring-manager-feedback",
+        headers=headers,
+        json={
+            "recommendation": "strong_yes",
+            "notes": "Manager wants to keep moving.",
+            "recommended_next_round": "Deep technical round",
+        },
+    )
+    assert manager_feedback.status_code == 200
+
+    recruiter_decision = client.post(
+        f"/api/v1/interviews/{interview_id}/decision",
+        headers=headers,
+        json={
+            "decision": "rejected",
+            "notes": "Recruiter is pausing due to compensation mismatch.",
+            "override_ai_recommendation": True,
+        },
+    )
+    assert recruiter_decision.status_code == 200
+
+    queue = client.get("/api/v1/candidates/calibration-queue", headers=headers)
+    assert queue.status_code == 200
+    payload = queue.json()
+    assert payload["total_items"] == 2
+    assert payload["conflicted_count"] == 1
+    assert payload["pending_count"] == 1
+    assert payload["mixed_count"] == 0
+    assert payload["entries"][0]["candidate_id"] == strong_candidate_id
+    assert payload["entries"][0]["priority"] == "critical"
+    assert payload["entries"][0]["consensus_status"] == "conflicted"
+    assert payload["entries"][1]["candidate_id"] == weak_candidate_id
+    assert payload["entries"][1]["priority"] == "medium"
+
+
 def test_candidate_review_workspace_handles_multiple_interviews_for_same_job() -> None:
     client = TestClient(main_module.app)
     email = f"workspace-multi+{uuid4().hex[:8]}@hireos.ai"

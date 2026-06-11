@@ -33,6 +33,11 @@ export default function DashboardPage() {
     queryFn: () => api.previewInterviewReminders(auth.token as string),
     enabled: Boolean(auth.token),
   });
+  const calibrationQueue = useQuery({
+    queryKey: ["calibration-queue", auth.token],
+    queryFn: () => api.getCalibrationQueue(auth.token as string),
+    enabled: Boolean(auth.token),
+  });
   const runReminders = useMutation({
     mutationFn: () => api.runInterviewReminders(auth.token as string),
     onSuccess: async () => {
@@ -106,19 +111,34 @@ export default function DashboardPage() {
         </Card>
 
         <Card>
-          <p className="text-sm font-semibold uppercase tracking-[0.22em] text-brand">
-            Review queue
-          </p>
-          <h3 className="mt-2 font-display text-2xl font-semibold text-text">
-            Live recruiter action areas
-          </h3>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-brand">
+                Review queue
+              </p>
+              <h3 className="mt-2 font-display text-2xl font-semibold text-text">
+                Live recruiter action areas
+              </h3>
+            </div>
+            <Link href="/calibration" className="text-sm font-semibold text-brand">
+              Open queue
+            </Link>
+          </div>
           <div className="mt-6 space-y-4">
-            <div className="rounded-[24px] bg-danger-soft px-4 py-4">
+            <div className="rounded-[24px] bg-brand-soft/70 px-4 py-4">
               <p className="text-sm font-semibold text-text">
-                {overview.data?.candidates_requiring_human_review || 0} candidates need manual review
+                {calibrationQueue.data?.total_items || 0} calibration items waiting
               </p>
               <p className="mt-2 text-sm leading-6 text-muted">
-                These candidates have low-confidence AI outputs, missing must-have skills, or incomplete interview answers.
+                Recruiters can now work conflicted, mixed, and pending consensus candidates from one dedicated queue.
+              </p>
+            </div>
+            <div className="rounded-[24px] bg-danger-soft px-4 py-4">
+              <p className="text-sm font-semibold text-text">
+                {calibrationQueue.data?.conflicted_count || 0} direct conflicts need escalation
+              </p>
+              <p className="mt-2 text-sm leading-6 text-muted">
+                These candidates have at least one advance signal and one reject signal in the latest review snapshot.
               </p>
             </div>
             <div className="rounded-[24px] bg-success-soft px-4 py-4">
