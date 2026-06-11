@@ -397,6 +397,23 @@ class HiringManagerFeedbackResponse(BaseModel):
     feedback: HiringManagerFeedbackRead
 
 
+class DecisionConsensusSignalRead(BaseModel):
+    source: str
+    label: str
+    raw_value: str
+    normalized_recommendation: str
+    rationale: str
+
+
+class DecisionConsensusRead(BaseModel):
+    overall_status: str
+    agreement_score: float
+    requires_escalation: bool
+    summary: str
+    conflict_reasons: list[str] = Field(default_factory=list)
+    signals: list[DecisionConsensusSignalRead] = Field(default_factory=list)
+
+
 class ReviewTimelineEntry(BaseModel):
     timestamp: datetime
     source: str
@@ -418,6 +435,7 @@ class CandidateReviewWorkspaceRead(BaseModel):
     decision_history: list[RecruiterDecisionRead] = Field(default_factory=list)
     latest_manager_feedback: HiringManagerFeedbackRead | None = None
     manager_feedback_history: list[HiringManagerFeedbackRead] = Field(default_factory=list)
+    decision_consensus: DecisionConsensusRead
     audit_timeline: list[ReviewTimelineEntry] = Field(default_factory=list)
     can_record_decision: bool
     can_record_manager_feedback: bool

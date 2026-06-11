@@ -671,9 +671,109 @@ def test_candidate_review_workspace_includes_decision_history_and_timeline() -> 
     assert payload["decision_history"]
     assert payload["latest_manager_feedback"]["recommendation"] == "strong_yes"
     assert payload["manager_feedback_history"]
+    assert payload["decision_consensus"]["overall_status"] == "aligned"
+    assert payload["decision_consensus"]["agreement_score"] == 100.0
+    assert payload["decision_consensus"]["requires_escalation"] is False
+    assert len(payload["decision_consensus"]["signals"]) == 3
     assert payload["can_record_manager_feedback"] is True
     assert any(entry["action"] == "recruiter.decision_made" for entry in payload["audit_timeline"])
     assert any(entry["action"] == "hiring_manager.feedback_recorded" for entry in payload["audit_timeline"])
+
+
+def test_candidate_review_workspace_flags_conflicted_consensus() -> None:
+    client = TestClient(main_module.app)
+    email = f"consensus+{uuid4().hex[:8]}@hireos.ai"
+    company = f"Consensus Co {uuid4().hex[:6]}"
+    signup = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "full_name": "Consensus Admin",
+            "email": email,
+            "password": "Demo@123",
+            "company_name": company,
+            "role": "admin",
+        },
+    )
+    assert signup.status_code == 200
+    token = signup.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    job = client.post(
+        "/api/v1/jobs",
+        headers=headers,
+        json={
+            "title": "Backend Engineer",
+            "department": "Platform",
+            "location": "Remote",
+            "work_mode": "remote",
+            "experience_range": "4-8 years",
+            "employment_type": "full-time",
+            "salary_range": "$140k-$180k",
+            "status": "open",
+            "job_description": "Build Python and PostgreSQL services with Kafka integrations.",
+            "required_skills": ["python", "postgresql", "kafka"],
+            "preferred_skills": ["observability"],
+        },
+    )
+    assert job.status_code == 200
+    job_id = job.json()["id"]
+
+    upload = client.post(
+        "/api/v1/candidates/upload-resume",
+        headers=headers,
+        files={"file": ("resume.txt", b"Jordan Backend\njordan@example.com\nBackend Engineer\nPython PostgreSQL Kafka observability\n", "text/plain")},
+        data={"name": "Jordan Backend", "email": "jordan@example.com", "location": "Remote"},
+    )
+    assert upload.status_code == 200
+    candidate_id = upload.json()["candidate"]["id"]
+
+    match = client.post(f"/api/v1/candidates/{candidate_id}/match-job/{job_id}", headers=headers)
+    assert match.status_code == 200
+    assert match.json()["match_recommendation"] == "strong_match"
+
+    invite = client.post(
+        "/api/v1/interviews/invite",
+        headers=headers,
+        json={
+            "candidate_id": candidate_id,
+            "job_id": job_id,
+            "interview_type": "Technical screening",
+            "mode": "text",
+        },
+    )
+    assert invite.status_code == 200
+    interview_id = invite.json()["id"]
+
+    manager_feedback = client.post(
+        f"/api/v1/interviews/{interview_id}/hiring-manager-feedback",
+        headers=headers,
+        json={
+            "recommendation": "strong_yes",
+            "notes": "Would like to continue to system design.",
+            "recommended_next_round": "System design",
+        },
+    )
+    assert manager_feedback.status_code == 200
+
+    decision = client.post(
+        f"/api/v1/interviews/{interview_id}/decision",
+        headers=headers,
+        json={
+            "decision": "rejected",
+            "notes": "Recruiter is concerned about timeline fit despite strong signals.",
+            "override_ai_recommendation": True,
+        },
+    )
+    assert decision.status_code == 200
+
+    workspace = client.get(f"/api/v1/candidates/{candidate_id}/review-workspace/{job_id}", headers=headers)
+    assert workspace.status_code == 200
+    payload = workspace.json()
+    assert payload["decision_consensus"]["overall_status"] == "conflicted"
+    assert payload["decision_consensus"]["requires_escalation"] is True
+    assert payload["decision_consensus"]["agreement_score"] == 66.67
+    assert "Recruiter decision differs from the current HireOS AI recommendation." in payload["decision_consensus"]["conflict_reasons"]
+    assert "Hiring manager feedback differs from the recruiter decision." in payload["decision_consensus"]["conflict_reasons"]
 
 
 def test_candidate_review_workspace_handles_multiple_interviews_for_same_job() -> None:

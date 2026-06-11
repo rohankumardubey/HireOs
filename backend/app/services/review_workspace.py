@@ -18,6 +18,8 @@ from app.db.models import (
 )
 from app.schemas import (
     CandidateReviewWorkspaceRead,
+    DecisionConsensusRead,
+    DecisionConsensusSignalRead,
     HiringManagerFeedbackRead,
     InterviewRead,
     MatchResultRead,
@@ -164,6 +166,12 @@ class CandidateReviewWorkspaceService:
                 )
 
         timeline.sort(key=lambda item: item.timestamp, reverse=True)
+        decision_consensus = self._build_decision_consensus(
+            match=match,
+            report=report,
+            latest_manager_feedback=manager_feedback[0] if manager_feedback else None,
+            latest_decision=decisions[0] if decisions else None,
+        )
 
         return CandidateReviewWorkspaceRead(
             candidate_id=candidate.id,
@@ -177,6 +185,7 @@ class CandidateReviewWorkspaceService:
             decision_history=decisions,
             latest_manager_feedback=manager_feedback[0] if manager_feedback else None,
             manager_feedback_history=manager_feedback,
+            decision_consensus=decision_consensus,
             audit_timeline=timeline[:16],
             can_record_decision=interview is not None,
             can_record_manager_feedback=interview is not None,
@@ -185,6 +194,156 @@ class CandidateReviewWorkspaceService:
                 "but AI outputs remain decision-support signals and every override should be documented with human reasoning."
             ),
         )
+
+    def _build_decision_consensus(
+        self,
+        *,
+        match: CandidateJobMatch | None,
+        report,
+        latest_manager_feedback: HiringManagerFeedbackRead | None,
+        latest_decision: RecruiterDecisionRead | None,
+    ) -> DecisionConsensusRead:
+        signals: list[DecisionConsensusSignalRead] = []
+        if match:
+            ai_recommendation = self._normalize_ai_recommendation(match.match_recommendation)
+            rationale = match.explanation
+            if report and report.recommended_next_step:
+                rationale = f"{rationale} Next step: {report.recommended_next_step}"
+            signals.append(
+                DecisionConsensusSignalRead(
+                    source="ai",
+                    label="HireOS AI",
+                    raw_value=match.match_recommendation,
+                    normalized_recommendation=ai_recommendation,
+                    rationale=rationale,
+                )
+            )
+        if latest_manager_feedback:
+            signals.append(
+                DecisionConsensusSignalRead(
+                    source="hiring_manager",
+                    label=latest_manager_feedback.hiring_manager_name,
+                    raw_value=latest_manager_feedback.recommendation,
+                    normalized_recommendation=self._normalize_manager_recommendation(latest_manager_feedback.recommendation),
+                    rationale=latest_manager_feedback.notes
+                    or latest_manager_feedback.recommended_next_round
+                    or "Hiring manager recommendation recorded without additional context.",
+                )
+            )
+        if latest_decision:
+            signals.append(
+                DecisionConsensusSignalRead(
+                    source="recruiter",
+                    label=latest_decision.recruiter_name,
+                    raw_value=latest_decision.decision,
+                    normalized_recommendation=self._normalize_recruiter_decision(latest_decision.decision),
+                    rationale=latest_decision.notes
+                    or (
+                        "Recruiter explicitly overrode the AI recommendation."
+                        if latest_decision.override_ai_recommendation
+                        else "Recruiter recorded the current pipeline action."
+                    ),
+                )
+            )
+
+        if len(signals) < 2:
+            return DecisionConsensusRead(
+                overall_status="pending",
+                agreement_score=0,
+                requires_escalation=False,
+                summary="Capture at least two decision-support signals before calibrating alignment.",
+                conflict_reasons=[],
+                signals=signals,
+            )
+
+        normalized_values = [signal.normalized_recommendation for signal in signals]
+        distinct_values = set(normalized_values)
+        dominant_count = max(normalized_values.count(value) for value in distinct_values)
+        agreement_score = round((dominant_count / len(signals)) * 100, 2)
+        conflict_reasons = self._build_conflict_reasons(signals, latest_decision)
+
+        if len(distinct_values) == 1:
+            normalized = next(iter(distinct_values))
+            return DecisionConsensusRead(
+                overall_status="aligned",
+                agreement_score=agreement_score,
+                requires_escalation=False,
+                summary=f"AI and human reviewers are aligned to {normalized} this candidate.",
+                conflict_reasons=[],
+                signals=signals,
+            )
+
+        has_advance = "advance" in distinct_values
+        has_reject = "reject" in distinct_values
+        overall_status = "conflicted" if has_advance and has_reject else "mixed"
+        summary = (
+            "Signals are split between advancing and rejecting the candidate. Run a calibration review before changing the pipeline."
+            if overall_status == "conflicted"
+            else "Signals are partially aligned but still need a human calibration pass before the final recruiter action."
+        )
+        return DecisionConsensusRead(
+            overall_status=overall_status,
+            agreement_score=agreement_score,
+            requires_escalation=True,
+            summary=summary,
+            conflict_reasons=conflict_reasons,
+            signals=signals,
+        )
+
+    def _build_conflict_reasons(
+        self,
+        signals: list[DecisionConsensusSignalRead],
+        latest_decision: RecruiterDecisionRead | None,
+    ) -> list[str]:
+        reasons: list[str] = []
+        signal_map = {signal.source: signal for signal in signals}
+        ai_signal = signal_map.get("ai")
+        manager_signal = signal_map.get("hiring_manager")
+        recruiter_signal = signal_map.get("recruiter")
+
+        if ai_signal and recruiter_signal and ai_signal.normalized_recommendation != recruiter_signal.normalized_recommendation:
+            reasons.append("Recruiter decision differs from the current HireOS AI recommendation.")
+        if manager_signal and recruiter_signal and manager_signal.normalized_recommendation != recruiter_signal.normalized_recommendation:
+            reasons.append("Hiring manager feedback differs from the recruiter decision.")
+        if ai_signal and manager_signal and ai_signal.normalized_recommendation != manager_signal.normalized_recommendation:
+            reasons.append("Hiring manager feedback differs from the current HireOS AI recommendation.")
+        if latest_decision and latest_decision.override_ai_recommendation:
+            reasons.append("Recruiter marked this decision as an explicit AI override.")
+
+        deduped: list[str] = []
+        for reason in reasons:
+            if reason not in deduped:
+                deduped.append(reason)
+        return deduped
+
+    def _normalize_ai_recommendation(self, value: str) -> str:
+        mapping = {
+            "strong_match": "advance",
+            "potential_match": "advance",
+            "needs_human_review": "review",
+            "weak_match": "reject",
+        }
+        return mapping.get(value, "review")
+
+    def _normalize_manager_recommendation(self, value: str) -> str:
+        mapping = {
+            "strong_yes": "advance",
+            "yes": "advance",
+            "hold": "review",
+            "no": "reject",
+        }
+        return mapping.get(value, "review")
+
+    def _normalize_recruiter_decision(self, value: str) -> str:
+        mapping = {
+            "shortlisted": "advance",
+            "moved_to_next_round": "advance",
+            "hired": "advance",
+            "human_review_required": "review",
+            "rejected": "reject",
+            "archived": "reject",
+        }
+        return mapping.get(value, "review")
 
     def _actor_label(self, *, actor_type: str | None, actor_id: str | None, candidate_name: str, user_labels: dict[str, str]) -> str:
         if actor_type == "candidate":

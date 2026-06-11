@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/lib/api";
-import type { InterviewAccessLink, InterviewInviteResponse, MatchResult } from "@/lib/types";
+import type { CandidateReviewWorkspace, InterviewAccessLink, InterviewInviteResponse, MatchResult } from "@/lib/types";
 import { formatScore, titleCase } from "@/lib/utils";
 
 const decisionOptions = [
@@ -40,10 +40,23 @@ function statusTone(status?: string): BadgeTone {
   if (status.includes("review")) {
     return "warning";
   }
-  if (status.includes("shortlist") || status.includes("hired") || status.includes("next_round")) {
+  if (status.includes("shortlist") || status.includes("hired") || status.includes("next_round") || status.includes("advance")) {
     return "success";
   }
   return "brand";
+}
+
+function consensusTone(status?: string): BadgeTone {
+  if (status === "aligned") {
+    return "success";
+  }
+  if (status === "conflicted") {
+    return "danger";
+  }
+  if (status === "mixed") {
+    return "warning";
+  }
+  return "neutral";
 }
 
 export default function CandidateDetailPage() {
@@ -86,7 +99,7 @@ export default function CandidateDetailPage() {
     queryFn: () => api.getZoomIntegrationStatus(auth.token as string),
     enabled: Boolean(auth.token),
   });
-  const reviewWorkspace = useQuery({
+  const reviewWorkspace = useQuery<CandidateReviewWorkspace>({
     queryKey: ["candidate-review-workspace", auth.token, candidateId, selectedJobId],
     queryFn: () => api.getCandidateReviewWorkspace(auth.token as string, candidateId, selectedJobId),
     enabled: Boolean(auth.token && candidateId && selectedJobId),
@@ -663,7 +676,7 @@ export default function CandidateDetailPage() {
               )}
             </div>
 
-	            <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-[22px] bg-white/75 px-4 py-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-muted-soft">Resume match</p>
                 <p className="mt-2 font-display text-3xl font-semibold text-text">
@@ -703,8 +716,8 @@ export default function CandidateDetailPage() {
                     "AI evidence should still be reviewed by a recruiter before moving the candidate."}
                 </p>
               </div>
-	              <div className="rounded-[22px] bg-white/75 px-4 py-4">
-	                <p className="text-xs uppercase tracking-[0.2em] text-muted-soft">Latest override</p>
+              <div className="rounded-[22px] bg-white/75 px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-soft">Latest override</p>
                 <p className="mt-2 font-display text-3xl font-semibold text-text">
                   {reviewWorkspace.data?.latest_decision?.override_ai_recommendation ? "Yes" : "No"}
                 </p>
@@ -712,30 +725,126 @@ export default function CandidateDetailPage() {
                   {reviewWorkspace.data?.latest_decision
                     ? `Logged by ${reviewWorkspace.data.latest_decision.recruiter_name}`
                     : "No recruiter override recorded yet."}
-	                </p>
-	              </div>
-	              <div className="rounded-[22px] bg-white/75 px-4 py-4 md:col-span-2 xl:col-span-4">
-	                <p className="text-xs uppercase tracking-[0.2em] text-muted-soft">Hiring manager signal</p>
-	                <div className="mt-2 flex flex-wrap items-center gap-3">
-	                  <p className="font-display text-3xl font-semibold text-text">
-	                    {reviewWorkspace.data?.latest_manager_feedback
-	                      ? titleCase(reviewWorkspace.data.latest_manager_feedback.recommendation)
-	                      : "Pending"}
-	                  </p>
-	                  {reviewWorkspace.data?.latest_manager_feedback ? (
-	                    <Badge tone="brand">
-	                      {reviewWorkspace.data.latest_manager_feedback.hiring_manager_name}
-	                    </Badge>
-	                  ) : (
-	                    <Badge tone="warning">No manager feedback yet</Badge>
-	                  )}
-	                </div>
-	                <p className="mt-2 text-sm text-muted">
-	                  {reviewWorkspace.data?.latest_manager_feedback?.recommended_next_round ||
-	                    "Capture a hiring-manager perspective before the recruiter locks the final pipeline move."}
-	                </p>
-	              </div>
-	            </div>
+                </p>
+              </div>
+              <div className="rounded-[22px] bg-white/75 px-4 py-4 md:col-span-2 xl:col-span-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-soft">Hiring manager signal</p>
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <p className="font-display text-3xl font-semibold text-text">
+                    {reviewWorkspace.data?.latest_manager_feedback
+                      ? titleCase(reviewWorkspace.data.latest_manager_feedback.recommendation)
+                      : "Pending"}
+                  </p>
+                  {reviewWorkspace.data?.latest_manager_feedback ? (
+                    <Badge tone="brand">
+                      {reviewWorkspace.data.latest_manager_feedback.hiring_manager_name}
+                    </Badge>
+                  ) : (
+                    <Badge tone="warning">No manager feedback yet</Badge>
+                  )}
+                </div>
+                <p className="mt-2 text-sm text-muted">
+                  {reviewWorkspace.data?.latest_manager_feedback?.recommended_next_round ||
+                    "Capture a hiring-manager perspective before the recruiter locks the final pipeline move."}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-[24px] border border-border bg-white/70 px-4 py-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-text">Decision consensus</p>
+                  <p className="mt-2 max-w-3xl text-sm leading-7 text-muted">
+                    {reviewWorkspace.data?.decision_consensus.summary ||
+                      "HireOS will compare AI, hiring manager, and recruiter signals here once enough evidence exists."}
+                  </p>
+                </div>
+                <Badge tone={consensusTone(reviewWorkspace.data?.decision_consensus?.overall_status)}>
+                  {reviewWorkspace.data?.decision_consensus
+                    ? `${titleCase(reviewWorkspace.data.decision_consensus.overall_status)} consensus`
+                    : "Pending consensus"}
+                </Badge>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <div className="rounded-[22px] bg-white/75 px-4 py-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted-soft">Agreement score</p>
+                  <p className="mt-2 font-display text-3xl font-semibold text-text">
+                    {reviewWorkspace.data?.decision_consensus
+                      ? `${formatScore(reviewWorkspace.data.decision_consensus.agreement_score)}%`
+                      : "0%"}
+                  </p>
+                  <p className="mt-2 text-sm text-muted">Normalized alignment across the most recent AI and human signals.</p>
+                </div>
+                <div className="rounded-[22px] bg-white/75 px-4 py-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted-soft">Escalation</p>
+                  <p className="mt-2 font-display text-3xl font-semibold text-text">
+                    {reviewWorkspace.data?.decision_consensus?.requires_escalation ? "Required" : "Not needed"}
+                  </p>
+                  <p className="mt-2 text-sm text-muted">
+                    {reviewWorkspace.data?.decision_consensus?.requires_escalation
+                      ? "Run a quick calibration conversation before advancing or rejecting."
+                      : "Signals are stable enough for the recruiter to move with confidence."}
+                  </p>
+                </div>
+                <div className="rounded-[22px] bg-white/75 px-4 py-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted-soft">Signal count</p>
+                  <p className="mt-2 font-display text-3xl font-semibold text-text">
+                    {reviewWorkspace.data?.decision_consensus?.signals?.length || 0}
+                  </p>
+                  <p className="mt-2 text-sm text-muted">Latest evidence points contributing to the calibration view.</p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_0.9fr]">
+                <div className="rounded-[24px] border border-border bg-surface-elevated px-4 py-4">
+                  <p className="font-semibold text-text">Signal breakdown</p>
+                  <div className="mt-4 space-y-3">
+                    {reviewWorkspace.data?.decision_consensus?.signals?.length ? (
+                      reviewWorkspace.data.decision_consensus.signals.map((signal) => (
+                        <div key={`${signal.source}-${signal.raw_value}-${signal.label}`} className="rounded-[20px] border border-border bg-white/80 px-4 py-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <p className="text-sm font-semibold text-text">{signal.label}</p>
+                            <div className="flex flex-wrap gap-2">
+                              <Badge tone="neutral">{titleCase(signal.source.replace("_", " "))}</Badge>
+                              <Badge tone={statusTone(signal.normalized_recommendation)}>
+                                {titleCase(signal.normalized_recommendation)}
+                              </Badge>
+                            </div>
+                          </div>
+                          <p className="mt-3 text-xs uppercase tracking-[0.18em] text-muted-soft">
+                            Raw value: {titleCase(signal.raw_value.replaceAll("_", " "))}
+                          </p>
+                          <p className="mt-2 text-sm leading-7 text-muted">{signal.rationale}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm leading-7 text-muted">
+                        Consensus will populate once at least one AI or human review signal is available.
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-[24px] border border-border bg-surface-elevated px-4 py-4">
+                  <p className="font-semibold text-text">Calibration notes</p>
+                  <div className="mt-4 space-y-3">
+                    {reviewWorkspace.data?.decision_consensus?.conflict_reasons?.length ? (
+                      reviewWorkspace.data.decision_consensus.conflict_reasons.map((reason) => (
+                        <div key={reason} className="rounded-[20px] border border-border bg-white/80 px-4 py-4">
+                          <Badge tone="warning">Needs discussion</Badge>
+                          <p className="mt-3 text-sm leading-7 text-muted">{reason}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-[20px] border border-border bg-white/80 px-4 py-4">
+                        <Badge tone="success">Aligned</Badge>
+                        <p className="mt-3 text-sm leading-7 text-muted">
+                          No major signal conflicts are present in the latest review snapshot.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
 
             <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_0.9fr]">
               <div className="rounded-[24px] border border-border bg-white/70 px-4 py-4">
@@ -747,15 +856,15 @@ export default function CandidateDetailPage() {
                     </Badge>
                   ) : null}
                 </div>
-	                {!reviewWorkspace.data?.can_record_decision ? (
-	                  <p className="mt-3 text-sm leading-7 text-muted">
-	                    Invite the candidate to an interview first so HireOS can attach the recruiter decision to a specific review workflow.
-	                  </p>
-	                ) : !["admin", "recruiter"].includes(currentRole) ? (
-	                  <p className="mt-3 text-sm leading-7 text-muted">
-	                    Recruiters and admins own the final pipeline action. Hiring managers can leave recommendation notes in the feedback workspace below.
-	                  </p>
-	                ) : (
+                {!reviewWorkspace.data?.can_record_decision ? (
+                  <p className="mt-3 text-sm leading-7 text-muted">
+                    Invite the candidate to an interview first so HireOS can attach the recruiter decision to a specific review workflow.
+                  </p>
+                ) : !["admin", "recruiter"].includes(currentRole) ? (
+                  <p className="mt-3 text-sm leading-7 text-muted">
+                    Recruiters and admins own the final pipeline action. Hiring managers can leave recommendation notes in the feedback workspace below.
+                  </p>
+                ) : (
                   <>
                     <label className="mt-4 block">
                       <span className="text-sm font-medium text-muted">Final recruiter decision</span>
@@ -846,90 +955,90 @@ export default function CandidateDetailPage() {
                   )}
                 </div>
               </div>
-	            </div>
+            </div>
 
-	            <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_0.9fr]">
-	              <div className="rounded-[24px] border border-border bg-white/70 px-4 py-4">
-	                <div className="flex items-center justify-between gap-3">
-	                  <div>
-	                    <p className="font-semibold text-text">Hiring manager feedback</p>
-	                    <p className="mt-2 text-sm leading-7 text-muted">
-	                      Add a manager recommendation without taking away recruiter control of the final workflow state.
-	                    </p>
-	                  </div>
-	                  {reviewWorkspace.data?.latest_manager_feedback ? (
-	                    <Badge tone="brand">
-	                      Latest: {titleCase(reviewWorkspace.data.latest_manager_feedback.recommendation)}
-	                    </Badge>
-	                  ) : (
-	                    <Badge tone="warning">Awaiting manager signal</Badge>
-	                  )}
-	                </div>
-	                {!reviewWorkspace.data?.can_record_manager_feedback ? (
-	                  <p className="mt-3 text-sm leading-7 text-muted">
-	                    Invite the candidate first so manager feedback stays attached to the active interview review.
-	                  </p>
-	                ) : !["admin", "hiring_manager"].includes(currentRole) ? (
-	                  <p className="mt-3 text-sm leading-7 text-muted">
-	                    Recruiters can view hiring-manager context here. Admins or hiring managers can log feedback from their own session.
-	                  </p>
-	                ) : (
-	                  <>
-	                    <label className="mt-4 block">
-	                      <span className="text-sm font-medium text-muted">Manager recommendation</span>
-	                      <select
-	                        className="mt-2 w-full rounded-2xl border border-border bg-white/80 px-4 py-3 outline-none"
-	                        value={managerRecommendation}
-	                        onChange={(event) => setManagerRecommendation(event.target.value)}
-	                      >
-	                        {hiringManagerOptions.map((option) => (
-	                          <option key={option.value} value={option.value}>
-	                            {option.label}
-	                          </option>
-	                        ))}
-	                      </select>
-	                    </label>
-	                    <label className="mt-4 block">
-	                      <span className="text-sm font-medium text-muted">Recommended next round</span>
-	                      <input
-	                        className="mt-2 w-full rounded-2xl border border-border bg-white/80 px-4 py-3 outline-none"
-	                        placeholder="Example: Architecture deep dive with senior platform team"
-	                        value={managerNextRound}
-	                        onChange={(event) => setManagerNextRound(event.target.value)}
-	                      />
-	                    </label>
-	                    <label className="mt-4 block">
-	                      <span className="text-sm font-medium text-muted">Feedback notes</span>
-	                      <textarea
-	                        className="mt-2 min-h-[130px] w-full rounded-2xl border border-border bg-white/80 px-4 py-3 outline-none"
-	                        placeholder="Highlight risk areas, strengths, calibration concerns, or the type of follow-up you want."
-	                        value={managerNotes}
-	                        onChange={(event) => setManagerNotes(event.target.value)}
-	                      />
-	                    </label>
-	                    <div className="mt-4 flex flex-wrap gap-3">
-	                      <button
-	                        type="button"
-	                        disabled={managerFeedbackDisabled}
-	                        onClick={() => hiringManagerFeedbackMutation.mutate()}
-	                        className="rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
-	                      >
-	                        Save manager feedback
-	                      </button>
-	                    </div>
-	                  </>
-	                )}
-	              </div>
+            <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_0.9fr]">
+              <div className="rounded-[24px] border border-border bg-white/70 px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-text">Hiring manager feedback</p>
+                    <p className="mt-2 text-sm leading-7 text-muted">
+                      Add a manager recommendation without taking away recruiter control of the final workflow state.
+                    </p>
+                  </div>
+                  {reviewWorkspace.data?.latest_manager_feedback ? (
+                    <Badge tone="brand">
+                      Latest: {titleCase(reviewWorkspace.data.latest_manager_feedback.recommendation)}
+                    </Badge>
+                  ) : (
+                    <Badge tone="warning">Awaiting manager signal</Badge>
+                  )}
+                </div>
+                {!reviewWorkspace.data?.can_record_manager_feedback ? (
+                  <p className="mt-3 text-sm leading-7 text-muted">
+                    Invite the candidate first so manager feedback stays attached to the active interview review.
+                  </p>
+                ) : !["admin", "hiring_manager"].includes(currentRole) ? (
+                  <p className="mt-3 text-sm leading-7 text-muted">
+                    Recruiters can view hiring-manager context here. Admins or hiring managers can log feedback from their own session.
+                  </p>
+                ) : (
+                  <>
+                    <label className="mt-4 block">
+                      <span className="text-sm font-medium text-muted">Manager recommendation</span>
+                      <select
+                        className="mt-2 w-full rounded-2xl border border-border bg-white/80 px-4 py-3 outline-none"
+                        value={managerRecommendation}
+                        onChange={(event) => setManagerRecommendation(event.target.value)}
+                      >
+                        {hiringManagerOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="mt-4 block">
+                      <span className="text-sm font-medium text-muted">Recommended next round</span>
+                      <input
+                        className="mt-2 w-full rounded-2xl border border-border bg-white/80 px-4 py-3 outline-none"
+                        placeholder="Example: Architecture deep dive with senior platform team"
+                        value={managerNextRound}
+                        onChange={(event) => setManagerNextRound(event.target.value)}
+                      />
+                    </label>
+                    <label className="mt-4 block">
+                      <span className="text-sm font-medium text-muted">Feedback notes</span>
+                      <textarea
+                        className="mt-2 min-h-[130px] w-full rounded-2xl border border-border bg-white/80 px-4 py-3 outline-none"
+                        placeholder="Highlight risk areas, strengths, calibration concerns, or the type of follow-up you want."
+                        value={managerNotes}
+                        onChange={(event) => setManagerNotes(event.target.value)}
+                      />
+                    </label>
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        disabled={managerFeedbackDisabled}
+                        onClick={() => hiringManagerFeedbackMutation.mutate()}
+                        className="rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
+                      >
+                        Save manager feedback
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
 
-	              <div className="rounded-[24px] border border-border bg-white/70 px-4 py-4">
-	                <p className="font-semibold text-text">Manager feedback history</p>
-	                <div className="mt-4 space-y-3">
-	                  {reviewWorkspace.data?.manager_feedback_history?.length ? (
-	                    reviewWorkspace.data.manager_feedback_history.map((entry) => (
-	                      <div
-	                        key={entry.id}
-	                        className="rounded-[20px] border border-border bg-surface-elevated px-4 py-4"
-	                      >
+              <div className="rounded-[24px] border border-border bg-white/70 px-4 py-4">
+                <p className="font-semibold text-text">Manager feedback history</p>
+                <div className="mt-4 space-y-3">
+                  {reviewWorkspace.data?.manager_feedback_history?.length ? (
+                    reviewWorkspace.data.manager_feedback_history.map((entry) => (
+                      <div
+                        key={entry.id}
+                        className="rounded-[20px] border border-border bg-surface-elevated px-4 py-4"
+                      >
 	                        <div className="flex flex-wrap items-center justify-between gap-3">
 	                          <Badge tone="brand">{titleCase(entry.recommendation)}</Badge>
 	                          <p className="text-xs uppercase tracking-[0.18em] text-muted-soft">
@@ -945,16 +1054,16 @@ export default function CandidateDetailPage() {
 	                            Next round: {entry.recommended_next_round}
 	                          </p>
 	                        ) : null}
-	                      </div>
-	                    ))
-	                  ) : (
-	                    <p className="text-sm leading-7 text-muted">
-	                      No hiring-manager recommendation has been recorded yet. Once it is captured, recruiters will be able to compare it against AI and recruiter signals here.
-	                    </p>
-	                  )}
-	                </div>
-	              </div>
-	            </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm leading-7 text-muted">
+                      No hiring-manager recommendation has been recorded yet. Once it is captured, recruiters will be able to compare it against AI and recruiter signals here.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
 
 	            <div className="mt-4 rounded-[24px] border border-border bg-white/70 px-4 py-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
