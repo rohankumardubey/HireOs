@@ -11,6 +11,7 @@ HireOS AI is built as a production-style SaaS starter, not a demo chatbot. It co
 - Redacts protected-attribute signals from resumes and candidate answers before AI matching or scoring
 - Runs structured AI interview flows with question plans, answer scoring, follow-up guidance, and report generation
 - Shows recruiter dashboards, candidate ranking, analytics, and override-friendly human review workflows
+- Captures hiring manager recommendations separately from recruiter final decisions so collaborative review never removes recruiter control
 - Pushes recruiter-approved shortlist decisions into external ATS/webhook systems with delivery history and manual retry
 - Protects candidate interview access with expiring magic links that recruiters can refresh or revoke without exposing interview IDs alone
 - Emits lifecycle events to Kafka when available, or local JSONL when running lightweight
@@ -168,6 +169,20 @@ What happens:
 - `Google Meet`: HireOS creates a Calendar event with conference data and stores the returned Meet join URL
 - `Zoom`: HireOS creates a real Zoom meeting and stores the returned Zoom join URL
 - If no provider is connected, recruiters can still paste an existing meeting URL manually
+
+### Hiring manager feedback workflow
+
+1. Open a candidate profile
+2. Select a job so the review workspace loads
+3. Invite the candidate if no interview exists yet
+4. Have an `admin` or `hiring_manager` open the candidate review page
+5. Use `Hiring manager feedback` to record a recommendation, notes, and the suggested next round
+6. Let the recruiter compare that input against AI signals before saving the final pipeline decision
+
+What happens:
+- Manager feedback is stored separately from recruiter decisions
+- Audit timeline entries and event records capture the feedback action
+- Recruiters can see the full manager history without losing ownership of the final shortlist, reject, or hire state
 
 ## Demo flow
 

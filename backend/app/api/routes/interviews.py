@@ -12,6 +12,7 @@ from app.db.models import (
     Candidate,
     CandidateJobMatch,
     Company,
+    HiringManagerFeedback,
     Interview,
     InterviewAnswer,
     NotificationDelivery,
@@ -20,6 +21,7 @@ from app.db.models import (
     InterviewStatus,
     Job,
     RecruiterDecision,
+    User,
 )
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user, get_primary_membership, require_roles
@@ -28,6 +30,9 @@ from app.schemas import (
     ATSWebhookTriggerResult,
     AnswerSubmitRequest,
     DecisionRequest,
+    HiringManagerFeedbackRead,
+    HiringManagerFeedbackRequest,
+    HiringManagerFeedbackResponse,
     InterviewEmailSendResponse,
     InterviewAccessLinkRead,
     InterviewInviteRequest,
@@ -707,7 +712,7 @@ def get_interview_report(interview_id: str, current_user=Depends(get_current_use
 def recruiter_decision(
     interview_id: str,
     payload: DecisionRequest,
-    current_user=Depends(require_roles("admin", "recruiter", "hiring_manager")),
+    current_user=Depends(require_roles("admin", "recruiter")),
     db: Session = Depends(get_db),
 ) -> RecruiterDecisionResponse:
     interview = db.get(Interview, interview_id)
@@ -784,5 +789,84 @@ def recruiter_decision(
                 if export_delivery
                 else "ATS export only runs for configured shortlist-stage decisions after webhook settings are enabled."
             ),
+        ),
+    )
+
+
+@router.get("/{interview_id}/hiring-manager-feedback", response_model=list[HiringManagerFeedbackRead])
+def list_hiring_manager_feedback(
+    interview_id: str,
+    current_user=Depends(require_roles("admin", "recruiter", "hiring_manager")),
+    db: Session = Depends(get_db),
+) -> list[HiringManagerFeedbackRead]:
+    interview = db.get(Interview, interview_id)
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+    rows = db.execute(
+        select(HiringManagerFeedback, User.full_name)
+        .join(User, User.id == HiringManagerFeedback.hiring_manager_id)
+        .where(HiringManagerFeedback.interview_id == interview_id)
+        .order_by(HiringManagerFeedback.created_at.desc())
+    ).all()
+    return [
+        HiringManagerFeedbackRead(
+            id=feedback.id,
+            recommendation=feedback.recommendation,
+            notes=feedback.notes,
+            recommended_next_round=feedback.recommended_next_round,
+            hiring_manager_id=feedback.hiring_manager_id,
+            hiring_manager_name=manager_name,
+            created_at=feedback.created_at,
+        )
+        for feedback, manager_name in rows
+    ]
+
+
+@router.post("/{interview_id}/hiring-manager-feedback", response_model=HiringManagerFeedbackResponse)
+def record_hiring_manager_feedback(
+    interview_id: str,
+    payload: HiringManagerFeedbackRequest,
+    current_user=Depends(require_roles("admin", "hiring_manager")),
+    db: Session = Depends(get_db),
+) -> HiringManagerFeedbackResponse:
+    interview = db.get(Interview, interview_id)
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+    feedback = HiringManagerFeedback(
+        interview_id=interview.id,
+        candidate_id=interview.candidate_id,
+        job_id=interview.job_id,
+        hiring_manager_id=current_user.id,
+        recommendation=payload.recommendation,
+        notes=payload.notes,
+        recommended_next_round=payload.recommended_next_round,
+    )
+    db.add(feedback)
+    db.flush()
+    log_audit(db, current_user.id, "hiring_manager_feedback", feedback.id, "hiring_manager.feedback_recorded", payload.model_dump())
+    events.publish(
+        db,
+        event_type="hiring_manager.feedback_recorded",
+        topic_name="hireos.hiring_manager.feedback_recorded",
+        company_id=interview.company_id,
+        job_id=interview.job_id,
+        candidate_id=interview.candidate_id,
+        interview_id=interview.id,
+        actor_id=current_user.id,
+        actor_type="hiring_manager",
+        payload=payload.model_dump(),
+    )
+    db.commit()
+    db.refresh(feedback)
+    return HiringManagerFeedbackResponse(
+        status="ok",
+        feedback=HiringManagerFeedbackRead(
+            id=feedback.id,
+            recommendation=feedback.recommendation,
+            notes=feedback.notes,
+            recommended_next_round=feedback.recommended_next_round,
+            hiring_manager_id=feedback.hiring_manager_id,
+            hiring_manager_name=current_user.full_name,
+            created_at=feedback.created_at,
         ),
     )
