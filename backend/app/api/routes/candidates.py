@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -7,10 +8,18 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
-from app.db.models import Candidate, CandidateJobMatch, CandidateResume, CandidateSkill, Job
+from app.db.models import CalibrationCase, Candidate, CandidateJobMatch, CandidateResume, CandidateSkill, CompanyMembership, Job, User
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user, get_primary_membership, require_roles
-from app.schemas import CalibrationQueueRead, CandidateCreate, CandidateRead, CandidateReviewWorkspaceRead, MatchResultRead
+from app.schemas import (
+    CalibrationCaseRead,
+    CalibrationCaseUpdateRequest,
+    CalibrationQueueRead,
+    CandidateCreate,
+    CandidateRead,
+    CandidateReviewWorkspaceRead,
+    MatchResultRead,
+)
 from app.services.events import EventPublisher, log_audit
 from app.services.fairness_guard import FairnessGuard
 from app.services.parsers import extract_text_from_upload, parse_resume_text
@@ -156,6 +165,116 @@ def get_calibration_queue(
 ) -> CalibrationQueueRead:
     membership = get_primary_membership(current_user, db)
     return review_workspace.build_calibration_queue(db, company_id=membership.company_id)
+
+
+@router.patch("/{candidate_id}/calibration-case/{job_id}", response_model=CalibrationCaseRead)
+def update_calibration_case(
+    candidate_id: str,
+    job_id: str,
+    payload: CalibrationCaseUpdateRequest,
+    current_user=Depends(require_roles("admin", "recruiter")),
+    db: Session = Depends(get_db),
+) -> CalibrationCaseRead:
+    membership = get_primary_membership(current_user, db)
+    candidate = db.execute(
+        select(Candidate).where(Candidate.id == candidate_id, Candidate.company_id == membership.company_id)
+    ).scalar_one_or_none()
+    job = db.execute(
+        select(Job).where(Job.id == job_id, Job.company_id == membership.company_id)
+    ).scalar_one_or_none()
+    if not candidate or not job:
+        raise HTTPException(status_code=404, detail="Candidate or job not found")
+
+    calibration_case = db.execute(
+        select(CalibrationCase)
+        .where(
+            CalibrationCase.company_id == membership.company_id,
+            CalibrationCase.candidate_id == candidate_id,
+            CalibrationCase.job_id == job_id,
+        )
+        .order_by(CalibrationCase.updated_at.desc())
+    ).scalars().first()
+    if not calibration_case:
+        calibration_case = CalibrationCase(
+            company_id=membership.company_id,
+            candidate_id=candidate_id,
+            job_id=job_id,
+            status="open",
+        )
+        db.add(calibration_case)
+        db.flush()
+
+    assignee_id = calibration_case.assigned_to_user_id
+    if payload.assign_to_me:
+        assignee_id = current_user.id
+    elif payload.clear_assignee:
+        assignee_id = None
+    elif payload.assigned_to_user_id is not None:
+        assignee_membership = db.execute(
+            select(CompanyMembership)
+            .where(
+                CompanyMembership.company_id == membership.company_id,
+                CompanyMembership.user_id == payload.assigned_to_user_id,
+            )
+        ).scalar_one_or_none()
+        if not assignee_membership:
+            raise HTTPException(status_code=400, detail="Assigned user must belong to the same company")
+        assignee_id = payload.assigned_to_user_id
+
+    if "status" in payload.model_fields_set:
+        calibration_case.status = payload.status
+    if assignee_id != calibration_case.assigned_to_user_id:
+        calibration_case.assigned_to_user_id = assignee_id
+    if "due_at" in payload.model_fields_set:
+        calibration_case.due_at = payload.due_at
+    if "resolution_summary" in payload.model_fields_set:
+        calibration_case.resolution_summary = payload.resolution_summary
+    if "resolution_notes" in payload.model_fields_set:
+        calibration_case.resolution_notes = payload.resolution_notes
+
+    if calibration_case.status == "resolved":
+        calibration_case.resolved_by_user_id = current_user.id
+        calibration_case.resolved_at = datetime.now(UTC).replace(tzinfo=None)
+    else:
+        calibration_case.resolved_by_user_id = None
+        calibration_case.resolved_at = None
+
+    log_audit(
+        db,
+        current_user.id,
+        "calibration_case",
+        calibration_case.id,
+        "calibration.case_updated",
+        payload.model_dump(),
+    )
+    events.publish(
+        db,
+        event_type="calibration.case_updated",
+        topic_name="hireos.calibration.case_updated",
+        company_id=membership.company_id,
+        job_id=job_id,
+        candidate_id=candidate_id,
+        actor_id=current_user.id,
+        actor_type="recruiter",
+        payload={
+            "status": calibration_case.status,
+            "assigned_to_user_id": calibration_case.assigned_to_user_id,
+            "due_at": calibration_case.due_at.isoformat() if calibration_case.due_at else None,
+            "resolution_summary": calibration_case.resolution_summary,
+        },
+    )
+    db.commit()
+    db.refresh(calibration_case)
+
+    user_ids = {user_id for user_id in [calibration_case.assigned_to_user_id, calibration_case.resolved_by_user_id] if user_id}
+    users = db.execute(select(User).where(User.id.in_(user_ids))).scalars().all() if user_ids else []
+    user_labels = {user.id: user.full_name for user in users}
+    latest_signal_at = datetime.now(UTC)
+    return review_workspace._serialize_calibration_case(  # type: ignore[attr-defined]
+        calibration_case,
+        user_labels=user_labels,
+        default_due_at=review_workspace._default_due_at("medium", latest_signal_at),  # type: ignore[attr-defined]
+    )
 
 
 @router.get("/{candidate_id}", response_model=CandidateRead)

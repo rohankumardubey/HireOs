@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/lib/api";
-import type { CalibrationQueue } from "@/lib/types";
+import type { CalibrationQueue, CalibrationQueueEntry } from "@/lib/types";
 import { formatScore, titleCase } from "@/lib/utils";
 
 function toneForPriority(priority?: string) {
@@ -37,13 +38,100 @@ function toneForConsensus(status?: string) {
   return "success" as const;
 }
 
+function toneForSla(status?: string) {
+  if (status === "overdue") {
+    return "danger" as const;
+  }
+  if (status === "due_today") {
+    return "warning" as const;
+  }
+  if (status === "resolved") {
+    return "success" as const;
+  }
+  return "brand" as const;
+}
+
+function toDateTimeLocal(value?: string | null) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+type DraftState = {
+  status: string;
+  due_at: string;
+  resolution_summary: string;
+  resolution_notes: string;
+};
+
 export default function CalibrationPage() {
   const auth = useAuth();
+  const [drafts, setDrafts] = useState<Record<string, DraftState>>({});
+  const currentRole = auth.user?.memberships?.[0]?.role || "recruiter";
   const calibrationQueue = useQuery<CalibrationQueue>({
     queryKey: ["calibration-queue", auth.token],
     queryFn: () => api.getCalibrationQueue(auth.token as string),
     enabled: Boolean(auth.token),
   });
+  const updateCaseMutation = useMutation({
+    mutationFn: ({
+      candidateId,
+      jobId,
+      payload,
+    }: {
+      candidateId: string;
+      jobId: string;
+      payload: Record<string, unknown>;
+    }) => api.updateCalibrationCase(auth.token as string, candidateId, jobId, payload),
+    onSuccess: async () => {
+      await calibrationQueue.refetch();
+    },
+  });
+
+  function draftKey(entry: CalibrationQueueEntry) {
+    return `${entry.candidate_id}:${entry.job_id}`;
+  }
+
+  function getDraft(entry: CalibrationQueueEntry): DraftState {
+    const key = draftKey(entry);
+    return (
+      drafts[key] || {
+        status: entry.calibration_case?.status || "open",
+        due_at: toDateTimeLocal(entry.calibration_case?.due_at),
+        resolution_summary: entry.calibration_case?.resolution_summary || "",
+        resolution_notes: entry.calibration_case?.resolution_notes || "",
+      }
+    );
+  }
+
+  function updateDraft(entry: CalibrationQueueEntry, patch: Partial<DraftState>) {
+    const key = draftKey(entry);
+    setDrafts((current) => ({
+      ...current,
+      [key]: {
+        ...getDraft(entry),
+        ...patch,
+      },
+    }));
+  }
+
+  function saveCase(entry: CalibrationQueueEntry, overrides?: Record<string, unknown>) {
+    const draft = getDraft(entry);
+    updateCaseMutation.mutate({
+      candidateId: entry.candidate_id,
+      jobId: entry.job_id,
+      payload: {
+        status: draft.status,
+        due_at: draft.due_at ? new Date(draft.due_at).toISOString() : null,
+        resolution_summary: draft.resolution_summary || null,
+        resolution_notes: draft.resolution_notes || null,
+        ...overrides,
+      },
+    });
+  }
 
   return (
     <AppShell
@@ -158,6 +246,15 @@ export default function CalibrationPage() {
                   >
                     Open calibration workspace
                   </Link>
+                  {["admin", "recruiter"].includes(currentRole) ? (
+                    <button
+                      type="button"
+                      onClick={() => saveCase(entry, { assign_to_me: true })}
+                      className="rounded-full border border-border bg-white/80 px-5 py-3 text-sm font-semibold text-text"
+                    >
+                      Assign to me
+                    </button>
+                  ) : null}
                 </div>
               </div>
 
@@ -181,6 +278,40 @@ export default function CalibrationPage() {
                 <div className="rounded-[20px] bg-white/70 px-4 py-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-muted-soft">Last signal</p>
                   <p className="mt-2 font-semibold text-text">{new Date(entry.latest_signal_at).toLocaleString()}</p>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-[20px] bg-white/70 px-4 py-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-soft">Case owner</p>
+                  <p className="mt-2 font-semibold text-text">
+                    {entry.calibration_case?.assigned_to_name || "Unassigned"}
+                  </p>
+                </div>
+                <div className="rounded-[20px] bg-white/70 px-4 py-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-soft">Case status</p>
+                  <div className="mt-2">
+                    <Badge tone={toneForPriority(entry.priority)}>
+                      {titleCase(entry.calibration_case?.status || "open")}
+                    </Badge>
+                  </div>
+                </div>
+                <div className="rounded-[20px] bg-white/70 px-4 py-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-soft">SLA</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <Badge tone={toneForSla(entry.calibration_case?.sla_status)}>
+                      {titleCase(entry.calibration_case?.sla_status || "on_track")}
+                    </Badge>
+                    <p className="text-sm font-semibold text-text">
+                      {entry.calibration_case?.due_at ? new Date(entry.calibration_case.due_at).toLocaleString() : "Not set"}
+                    </p>
+                  </div>
+                </div>
+                <div className="rounded-[20px] bg-white/70 px-4 py-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-soft">Resolution</p>
+                  <p className="mt-2 text-sm font-semibold text-text">
+                    {entry.calibration_case?.resolution_summary || "Pending"}
+                  </p>
                 </div>
               </div>
 
@@ -210,6 +341,91 @@ export default function CalibrationPage() {
                     Candidate status: {titleCase(entry.candidate_status)}
                   </p>
                 </div>
+              </div>
+
+              <div className="mt-5 rounded-[22px] border border-border bg-surface-elevated px-4 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-text">Case management</p>
+                    <p className="mt-2 text-sm leading-7 text-muted">
+                      Assign ownership, set an SLA, and capture how the recruiter resolved the disagreement.
+                    </p>
+                  </div>
+                  {updateCaseMutation.isPending ? <Badge tone="brand">Saving...</Badge> : null}
+                </div>
+                {["admin", "recruiter"].includes(currentRole) ? (
+                  <>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      <label className="block">
+                        <span className="text-sm font-medium text-muted">Case status</span>
+                        <select
+                          className="mt-2 w-full rounded-2xl border border-border bg-white/80 px-4 py-3 outline-none"
+                          value={getDraft(entry).status}
+                          onChange={(event) => updateDraft(entry, { status: event.target.value })}
+                        >
+                          <option value="open">Open</option>
+                          <option value="in_progress">In progress</option>
+                          <option value="reopened">Reopened</option>
+                          <option value="resolved">Resolved</option>
+                        </select>
+                      </label>
+                      <label className="block md:col-span-1 xl:col-span-2">
+                        <span className="text-sm font-medium text-muted">Due by</span>
+                        <input
+                          type="datetime-local"
+                          className="mt-2 w-full rounded-2xl border border-border bg-white/80 px-4 py-3 outline-none"
+                          value={getDraft(entry).due_at}
+                          onChange={(event) => updateDraft(entry, { due_at: event.target.value })}
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-sm font-medium text-muted">Resolution summary</span>
+                        <input
+                          className="mt-2 w-full rounded-2xl border border-border bg-white/80 px-4 py-3 outline-none"
+                          value={getDraft(entry).resolution_summary}
+                          onChange={(event) => updateDraft(entry, { resolution_summary: event.target.value })}
+                          placeholder="Example: Aligned on moving to system design"
+                        />
+                      </label>
+                    </div>
+                    <label className="mt-4 block">
+                      <span className="text-sm font-medium text-muted">Resolution notes</span>
+                      <textarea
+                        className="mt-2 min-h-[120px] w-full rounded-2xl border border-border bg-white/80 px-4 py-3 outline-none"
+                        value={getDraft(entry).resolution_notes}
+                        onChange={(event) => updateDraft(entry, { resolution_notes: event.target.value })}
+                        placeholder="Capture the discussion outcome, compensation constraints, evidence reviewed, and the next recruiter action."
+                      />
+                    </label>
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={() => saveCase(entry, { status: "in_progress", assign_to_me: true })}
+                        className="rounded-full border border-border bg-white/80 px-5 py-3 text-sm font-semibold text-text"
+                      >
+                        Start working
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => saveCase(entry, { status: "resolved" })}
+                        className="rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white"
+                      >
+                        Resolve case
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => saveCase(entry)}
+                        className="rounded-full border border-border bg-white/80 px-5 py-3 text-sm font-semibold text-text"
+                      >
+                        Save updates
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="mt-4 rounded-[18px] bg-white/80 px-4 py-3 text-sm leading-7 text-muted">
+                    Recruiters and admins can update case ownership, SLA, and resolution notes. Hiring managers can still review the queue in read-only mode.
+                  </div>
+                )}
               </div>
             </Card>
           ))
