@@ -9,7 +9,13 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/lib/api";
-import type { CalibrationQueue, CalibrationQueueEntry } from "@/lib/types";
+import type {
+  CalibrationQueue,
+  CalibrationQueueEntry,
+  CalibrationReminderPreview,
+  CalibrationReminderPreviewResponse,
+  CalibrationReminderRunResponse,
+} from "@/lib/types";
 import { formatScore, titleCase } from "@/lib/utils";
 
 function toneForPriority(priority?: string) {
@@ -76,6 +82,11 @@ export default function CalibrationPage() {
     queryFn: () => api.getCalibrationQueue(auth.token as string),
     enabled: Boolean(auth.token),
   });
+  const calibrationReminders = useQuery<CalibrationReminderPreviewResponse>({
+    queryKey: ["calibration-reminders", auth.token],
+    queryFn: () => api.previewCalibrationReminders(auth.token as string),
+    enabled: Boolean(auth.token),
+  });
   const updateCaseMutation = useMutation({
     mutationFn: ({
       candidateId,
@@ -88,6 +99,13 @@ export default function CalibrationPage() {
     }) => api.updateCalibrationCase(auth.token as string, candidateId, jobId, payload),
     onSuccess: async () => {
       await calibrationQueue.refetch();
+      await calibrationReminders.refetch();
+    },
+  });
+  const runReminderMutation = useMutation<CalibrationReminderRunResponse>({
+    mutationFn: () => api.runCalibrationReminders(auth.token as string),
+    onSuccess: async () => {
+      await calibrationReminders.refetch();
     },
   });
 
@@ -218,6 +236,102 @@ export default function CalibrationPage() {
                 Lower agreement means the recruiter should spend more time reconciling evidence before closing the loop.
               </p>
             </div>
+          </div>
+        </Card>
+      </div>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
+        <Card>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-brand">Reminder automation</p>
+              <h3 className="mt-2 font-display text-2xl font-semibold text-text">Overdue case nudges</h3>
+              <p className="mt-3 text-sm leading-7 text-muted">
+                Notify the assignee or fallback recruiter when a calibration case is overdue or due today and still unresolved.
+              </p>
+            </div>
+            {["admin", "recruiter"].includes(currentRole) ? (
+              <button
+                type="button"
+                disabled={runReminderMutation.isPending || !calibrationReminders.data?.cases?.length}
+                onClick={() => runReminderMutation.mutate()}
+                className="rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {runReminderMutation.isPending ? "Sending reminders..." : "Run reminders now"}
+              </button>
+            ) : null}
+          </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <div className="rounded-[20px] bg-white/70 px-4 py-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-muted-soft">Queued</p>
+              <p className="mt-2 font-display text-3xl font-semibold text-text">
+                {calibrationReminders.data?.cases?.length || 0}
+              </p>
+              <p className="mt-2 text-sm text-muted">Cases currently eligible for a reminder.</p>
+            </div>
+            <div className="rounded-[20px] bg-white/70 px-4 py-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-muted-soft">Overdue</p>
+              <p className="mt-2 font-display text-3xl font-semibold text-text">
+                {calibrationReminders.data?.overdue_count || 0}
+              </p>
+              <p className="mt-2 text-sm text-muted">Cases already beyond their SLA due date.</p>
+            </div>
+            <div className="rounded-[20px] bg-white/70 px-4 py-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-muted-soft">Due today</p>
+              <p className="mt-2 font-display text-3xl font-semibold text-text">
+                {calibrationReminders.data?.due_today_count || 0}
+              </p>
+              <p className="mt-2 text-sm text-muted">Cases that should be closed before the day ends.</p>
+            </div>
+          </div>
+          {runReminderMutation.data ? (
+            <div className="mt-4 rounded-[20px] bg-success-soft px-4 py-4">
+              <p className="text-sm font-semibold text-text">Reminder run complete</p>
+              <p className="mt-2 text-sm leading-7 text-muted">
+                Sent: {runReminderMutation.data.sent_count} · Fallback outbox: {runReminderMutation.data.fallback_count} · Failed: {runReminderMutation.data.failed_count}
+              </p>
+            </div>
+          ) : null}
+          <p className="mt-4 text-xs leading-6 text-muted">{calibrationReminders.data?.policy_note}</p>
+        </Card>
+
+        <Card>
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="font-display text-2xl font-semibold text-text">Cases due for reminder</h3>
+            <Badge tone={calibrationReminders.data?.cases?.length ? "warning" : "success"}>
+              {calibrationReminders.data?.cases?.length || 0} queued
+            </Badge>
+          </div>
+          <div className="mt-5 space-y-3">
+            {calibrationReminders.data?.cases?.length ? (
+              calibrationReminders.data.cases.slice(0, 6).map((item: CalibrationReminderPreview) => (
+                <div key={item.calibration_case_id} className="rounded-[20px] border border-border bg-white/70 px-4 py-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-text">{item.candidate_name}</p>
+                      <p className="mt-1 text-sm text-muted">
+                        {item.job_title} · {item.recipient_name} · {item.recipient_email}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge tone={toneForPriority(item.priority)}>{titleCase(item.priority)}</Badge>
+                      <Badge tone={toneForSla(item.sla_status)}>{titleCase(item.sla_status)}</Badge>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-sm leading-7 text-muted">{item.reminder_reason}</p>
+                  <p className="mt-3 text-xs uppercase tracking-[0.16em] text-muted-soft">
+                    Due {new Date(item.due_at).toLocaleString()} · prior attempts {item.reminder_attempts}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-[20px] bg-success-soft px-4 py-4">
+                <p className="text-sm font-semibold text-text">No calibration reminders are due right now.</p>
+                <p className="mt-2 text-sm leading-6 text-muted">
+                  Once a case becomes overdue or due today and remains unresolved, HireOS will queue it here for notification.
+                </p>
+              </div>
+            )}
           </div>
         </Card>
       </div>

@@ -21,6 +21,7 @@
 - `hireos.recruiter.decision_made`
 - `hireos.hiring_manager.feedback_recorded`
 - `hireos.calibration.case_updated`
+- `hireos.calibration.reminder_sent`
 - `hireos.error.events`
 
 ## Envelope

@@ -216,6 +216,12 @@ What happens:
   - full resolution notes
 - Resolved cases automatically drop out of the active queue until a newer conflicting signal appears
 
+### Calibration reminder automation
+
+- Open `/calibration` to preview which overdue or due-today calibration cases are eligible for reminder outreach
+- HireOS sends the reminder to the case assignee first, then falls back to the candidate owner when the case is still unassigned
+- Reminder delivery respects a 12-hour cooldown and stops after two successful reminder sends for the same case
+
 ## Demo flow
 
 1. Recruiter logs in

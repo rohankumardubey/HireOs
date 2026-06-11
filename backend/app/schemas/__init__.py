@@ -497,6 +497,37 @@ class CalibrationQueueRead(BaseModel):
     entries: list[CalibrationQueueEntryRead] = Field(default_factory=list)
 
 
+class CalibrationReminderPreviewRead(BaseModel):
+    calibration_case_id: str
+    candidate_id: str
+    candidate_name: str
+    job_id: str
+    job_title: str
+    recipient_user_id: str
+    recipient_name: str
+    recipient_email: EmailStr
+    priority: str
+    consensus_status: str
+    reminder_reason: str
+    due_at: datetime
+    sla_status: str
+    reminder_attempts: int
+
+
+class CalibrationReminderPreviewResponse(BaseModel):
+    overdue_count: int
+    due_today_count: int
+    cases: list[CalibrationReminderPreviewRead]
+    policy_note: str
+
+
+class CalibrationReminderRunResponse(BaseModel):
+    sent_count: int
+    fallback_count: int
+    failed_count: int
+    deliveries: list[NotificationDeliveryRead]
+
+
 class RankingEntry(BaseModel):
     rank: int
     candidate_id: str

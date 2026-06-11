@@ -29,6 +29,8 @@ Base path: `/api/v1`
 - `POST /candidates/upload-resume`
 - `GET /candidates`
 - `GET /candidates/calibration-queue`
+- `GET /candidates/calibration-queue/reminders/preview`
+- `POST /candidates/calibration-queue/reminders/run`
 - `GET /candidates/{candidate_id}`
 - `PATCH /candidates/{candidate_id}/calibration-case/{job_id}`
 - `POST /candidates/{candidate_id}/match-job/{job_id}`
