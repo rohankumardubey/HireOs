@@ -78,6 +78,12 @@ Base path: `/api/v1`
 - `GET /analytics/model-quality`
 - `GET /analytics/funnel`
 
+## Model quality evaluations
+
+- `POST /evaluations/runs`
+- `GET /evaluations/runs`
+- `GET /evaluations/runs/{run_id}`
+
 ## Health
 
 - `GET /health`

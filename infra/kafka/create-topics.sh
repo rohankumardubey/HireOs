@@ -19,6 +19,12 @@ TOPICS=(
   "hireos.interview.completed"
   "hireos.report.generated"
   "hireos.recruiter.decision_made"
+  "hireos.hiring_manager.feedback_recorded"
+  "hireos.calibration.case_updated"
+  "hireos.calibration.reminder_sent"
+  "hireos.evaluation.run_started"
+  "hireos.evaluation.run_completed"
+  "hireos.evaluation.regression_detected"
   "hireos.error.events"
 )
 
@@ -27,4 +33,3 @@ for topic in "${TOPICS[@]}"; do
 done
 
 echo "HireOS topics created or already present."
-

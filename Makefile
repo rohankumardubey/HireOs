@@ -3,7 +3,7 @@ SHELL := /bin/zsh
 BACKEND_DIR := backend
 FRONTEND_DIR := frontend
 
-.PHONY: up down logs backend frontend migrate seed test lint format demo kafka-topics metrics run-all
+.PHONY: up down logs backend frontend migrate seed test lint format demo kafka-topics metrics run-all scoring-eval
 
 up:
 	docker compose up --build
@@ -52,3 +52,6 @@ metrics:
 
 run-all:
 	bash scripts/run_everything.sh
+
+scoring-eval:
+	python3 scripts/run_scoring_eval.py
