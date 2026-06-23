@@ -465,3 +465,56 @@ class AnalyticsDailyMetric(Base, TimestampMixin):
     metric_name: Mapped[str] = mapped_column(String(100), index=True)
     metric_value: Mapped[float] = mapped_column(Float, default=0)
     dimension: Mapped[str | None] = mapped_column(String(100))
+
+
+class EvaluationRun(Base, TimestampMixin):
+    __tablename__ = "evaluation_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    company_id: Mapped[str] = mapped_column(ForeignKey("companies.id"), index=True)
+    triggered_by_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
+    dataset_name: Mapped[str] = mapped_column(String(255), index=True)
+    dataset_version: Mapped[str] = mapped_column(String(64), index=True)
+    scoring_policy_version: Mapped[str] = mapped_column(String(100), index=True)
+    provider: Mapped[str] = mapped_column(String(50))
+    status: Mapped[str] = mapped_column(String(50), default="running", index=True)
+    quality_status: Mapped[str | None] = mapped_column(String(50), index=True)
+    total_cases: Mapped[int] = mapped_column(Integer, default=0)
+    strong_pass_rate: Mapped[float] = mapped_column(Float, default=0)
+    weak_rejection_rate: Mapped[float] = mapped_column(Float, default=0)
+    average_score_separation: Mapped[float] = mapped_column(Float, default=0)
+    minimum_score_separation: Mapped[float] = mapped_column(Float, default=0)
+    false_negative_count: Mapped[int] = mapped_column(Integer, default=0)
+    false_positive_count: Mapped[int] = mapped_column(Integer, default=0)
+    regression_count: Mapped[int] = mapped_column(Integer, default=0)
+    baseline_run_id: Mapped[str | None] = mapped_column(ForeignKey("evaluation_runs.id"), index=True)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
+
+    case_results: Mapped[list["EvaluationCaseResult"]] = relationship(
+        back_populates="evaluation_run",
+        cascade="all, delete-orphan",
+    )
+
+
+class EvaluationCaseResult(Base, TimestampMixin):
+    __tablename__ = "evaluation_case_results"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_str)
+    evaluation_run_id: Mapped[str] = mapped_column(ForeignKey("evaluation_runs.id"), index=True)
+    case_key: Mapped[str] = mapped_column(String(64), index=True)
+    role: Mapped[str] = mapped_column(String(255), index=True)
+    skill_category: Mapped[str] = mapped_column(String(100), index=True)
+    question: Mapped[str] = mapped_column(Text)
+    min_passing_score: Mapped[float] = mapped_column(Float)
+    strong_score: Mapped[float] = mapped_column(Float)
+    weak_score: Mapped[float] = mapped_column(Float)
+    strong_passes: Mapped[bool] = mapped_column(Boolean)
+    weak_passes: Mapped[bool] = mapped_column(Boolean)
+    score_separation: Mapped[float] = mapped_column(Float)
+    regression_detected: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    regression_reason: Mapped[str | None] = mapped_column(Text)
+    details_json: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    evaluation_run: Mapped[EvaluationRun] = relationship(back_populates="case_results")

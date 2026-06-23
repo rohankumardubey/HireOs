@@ -22,6 +22,9 @@
 - `hireos.hiring_manager.feedback_recorded`
 - `hireos.calibration.case_updated`
 - `hireos.calibration.reminder_sent`
+- `hireos.evaluation.run_started`
+- `hireos.evaluation.run_completed`
+- `hireos.evaluation.regression_detected`
 - `hireos.error.events`
 
 ## Envelope

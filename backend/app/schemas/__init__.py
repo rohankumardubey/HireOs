@@ -597,6 +597,55 @@ class AnalyticsOverview(BaseModel):
     pipeline_by_stage: dict[str, int]
 
 
+class EvaluationCaseResultRead(ORMModel):
+    id: str
+    case_key: str
+    role: str
+    skill_category: str
+    question: str
+    min_passing_score: float
+    strong_score: float
+    weak_score: float
+    strong_passes: bool
+    weak_passes: bool
+    score_separation: float
+    regression_detected: bool
+    regression_reason: str | None = None
+    details_json: dict = {}
+
+
+class EvaluationRunRead(ORMModel):
+    id: str
+    company_id: str
+    triggered_by_id: str | None = None
+    dataset_name: str
+    dataset_version: str
+    scoring_policy_version: str
+    provider: str
+    status: str
+    quality_status: str | None = None
+    total_cases: int
+    strong_pass_rate: float
+    weak_rejection_rate: float
+    average_score_separation: float
+    minimum_score_separation: float
+    false_negative_count: int
+    false_positive_count: int
+    regression_count: int
+    baseline_run_id: str | None = None
+    error_message: str | None = None
+    started_at: datetime
+    completed_at: datetime | None = None
+    created_at: datetime
+    case_results: list[EvaluationCaseResultRead] = Field(default_factory=list)
+
+
+class EvaluationRunListRead(BaseModel):
+    runs: list[EvaluationRunRead]
+    latest: EvaluationRunRead | None = None
+    policy_note: str
+
+
 class GoogleIntegrationStatus(BaseModel):
     configured: bool
     connected: bool

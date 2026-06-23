@@ -3,50 +3,55 @@
     "role": "Data Engineer",
     "skill_category": "kafka",
     "question": "Explain Kafka consumer groups.",
+    "min_passing_score": 65.0,
     "strong_score": 64.97,
     "weak_score": 17.38,
-    "min_passing_score": 65.0,
     "strong_passes": false,
-    "weak_passes": false
+    "weak_passes": false,
+    "score_separation": 47.59
   },
   {
     "role": "Backend Engineer",
     "skill_category": "fastapi",
     "question": "How do you design a resilient FastAPI service?",
+    "min_passing_score": 65.0,
     "strong_score": 48.05,
     "weak_score": 16.02,
-    "min_passing_score": 65.0,
     "strong_passes": false,
-    "weak_passes": false
+    "weak_passes": false,
+    "score_separation": 32.03
   },
   {
     "role": "ML Engineer",
     "skill_category": "llm",
     "question": "How would you evaluate an interview scoring model?",
+    "min_passing_score": 70.0,
     "strong_score": 62.25,
     "weak_score": 16.48,
-    "min_passing_score": 70.0,
     "strong_passes": false,
-    "weak_passes": false
+    "weak_passes": false,
+    "score_separation": 45.77
   },
   {
     "role": "Product Manager",
     "skill_category": "roadmapping",
     "question": "How do you prioritize roadmap work?",
+    "min_passing_score": 60.0,
     "strong_score": 75.55,
     "weak_score": 16.48,
-    "min_passing_score": 60.0,
     "strong_passes": true,
-    "weak_passes": false
+    "weak_passes": false,
+    "score_separation": 59.07
   },
   {
     "role": "Support Lead",
     "skill_category": "leadership",
     "question": "How do you improve support quality?",
+    "min_passing_score": 60.0,
     "strong_score": 61.35,
     "weak_score": 16.02,
-    "min_passing_score": 60.0,
     "strong_passes": true,
-    "weak_passes": false
+    "weak_passes": false,
+    "score_separation": 45.33
   }
 ]

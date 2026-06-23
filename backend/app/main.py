@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from app.api.routes import analytics, auth, candidates, companies, comparison, copilot, health, integrations, interviews, jobs, reports
+from app.api.routes import analytics, auth, candidates, companies, comparison, copilot, evaluations, health, integrations, interviews, jobs, reports
 from app.core.config import settings
 from app.db.session import init_db
 
@@ -49,4 +49,5 @@ app.include_router(analytics.router, prefix=settings.api_v1_prefix)
 app.include_router(copilot.router, prefix=settings.api_v1_prefix)
 app.include_router(comparison.router, prefix=settings.api_v1_prefix)
 app.include_router(integrations.router, prefix=settings.api_v1_prefix)
+app.include_router(evaluations.router, prefix=settings.api_v1_prefix)
 app.include_router(health.router)

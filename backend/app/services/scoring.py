@@ -11,6 +11,8 @@ from app.services.ai import LLMGateway
 from app.services.fairness_guard import FairnessGuard
 from app.services.parsers import parse_job_description
 
+SCORING_POLICY_VERSION = "interview-heuristic-v1"
+
 
 def normalize(text: str) -> str:
     return re.sub(r"[^a-z0-9\s]", " ", text.lower())
