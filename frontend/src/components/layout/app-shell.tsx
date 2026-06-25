@@ -12,6 +12,7 @@ import {
   GitCompareArrows,
   Settings,
   Shield,
+  ShieldCheck,
   TestTubeDiagonal,
   Users2,
 } from "lucide-react";
@@ -31,6 +32,7 @@ const nav = [
   { href: "/ranking", label: "Ranking", icon: BarChart3 },
   { href: "/reports", label: "Reports", icon: FileText },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/responsible-ai", label: "Bias Shield", icon: ShieldCheck },
   { href: "/evaluations", label: "Model Quality", icon: TestTubeDiagonal },
   { href: "/admin", label: "Admin", icon: Shield },
   { href: "/settings", label: "Settings", icon: Settings },

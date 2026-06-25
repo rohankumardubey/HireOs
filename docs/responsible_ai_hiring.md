@@ -31,6 +31,7 @@ HireOS AI is decision support software, not an automated hiring decision-maker.
 - Event envelopes keep the lifecycle observable.
 - Reports preserve score explanations and next-step rationale.
 - Resume compliance metadata records when redaction was applied, how many signals were removed, and which protected-signal categories were detected.
+- The Bias Shield dashboard aggregates redaction coverage, human-review rates, recruiter overrides, calibration backlog, audit/event evidence, and candidate-level governance signals through `GET /api/v1/analytics/responsible-ai`.
 
 ## Data retention suggestions
 

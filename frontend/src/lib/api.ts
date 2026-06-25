@@ -16,6 +16,7 @@ import type {
   Job,
   MatchResult,
   Report,
+  ResponsibleAIDashboard,
   User,
 } from "@/lib/types";
 
@@ -322,6 +323,8 @@ export const api = {
       human_in_loop: boolean;
       compliance_note: string;
     }>("/analytics/model-quality", { token }),
+  getResponsibleAI: (token: string) =>
+    request<ResponsibleAIDashboard>("/analytics/responsible-ai", { token }),
 
   getEvaluationRuns: (token: string) =>
     request<EvaluationRunList>("/evaluations/runs", { token }),

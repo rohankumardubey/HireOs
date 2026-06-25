@@ -361,3 +361,77 @@ export interface EvaluationRunList {
   latest?: EvaluationRun | null;
   policy_note: string;
 }
+
+export interface ResponsibleAISummary {
+  total_candidates: number;
+  resumes_processed: number;
+  redacted_resumes: number;
+  protected_signal_rate: number;
+  total_redactions: number;
+  human_review_candidates: number;
+  human_review_rate: number;
+  total_matches: number;
+  human_review_matches: number;
+  total_reports: number;
+  human_review_reports: number;
+  total_decisions: number;
+  override_count: number;
+  override_rate: number;
+  open_calibration_cases: number;
+  overdue_calibration_cases: number;
+  audit_log_count: number;
+  governance_event_count: number;
+}
+
+export interface ResponsibleAIRedactionCategory {
+  category: string;
+  count: number;
+}
+
+export interface ResponsibleAIHumanReviewBreakdown {
+  label: string;
+  total: number;
+  requires_review: number;
+  rate: number;
+}
+
+export interface ResponsibleAIGovernanceEvent {
+  event_type: string;
+  count: number;
+}
+
+export interface ResponsibleAICandidateSignal {
+  candidate_id: string;
+  candidate_name: string;
+  candidate_email: string;
+  status: string;
+  job_id?: string | null;
+  job_title?: string | null;
+  match_score?: number | null;
+  ai_recommendation?: string | null;
+  human_review_required: boolean;
+  override_ai_recommendation: boolean;
+  redaction_count: number;
+  redaction_categories: string[];
+  open_calibration_case_count: number;
+  reasons: string[];
+  latest_signal_at: string;
+}
+
+export interface ResponsibleAIControl {
+  name: string;
+  status: string;
+  evidence_count: number;
+  description: string;
+}
+
+export interface ResponsibleAIDashboard {
+  summary: ResponsibleAISummary;
+  redaction_categories: ResponsibleAIRedactionCategory[];
+  human_review_breakdown: ResponsibleAIHumanReviewBreakdown[];
+  governance_events: ResponsibleAIGovernanceEvent[];
+  recent_candidate_signals: ResponsibleAICandidateSignal[];
+  controls: ResponsibleAIControl[];
+  risk_flags: string[];
+  policy_note: string;
+}

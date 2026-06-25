@@ -77,6 +77,7 @@ Base path: `/api/v1`
 - `GET /analytics/jobs/{job_id}`
 - `GET /analytics/model-quality`
 - `GET /analytics/funnel`
+- `GET /analytics/responsible-ai`
 
 ## Model quality evaluations
 
