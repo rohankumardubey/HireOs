@@ -597,6 +597,80 @@ class AnalyticsOverview(BaseModel):
     pipeline_by_stage: dict[str, int]
 
 
+class ResponsibleAISummary(BaseModel):
+    total_candidates: int
+    resumes_processed: int
+    redacted_resumes: int
+    protected_signal_rate: float
+    total_redactions: int
+    human_review_candidates: int
+    human_review_rate: float
+    total_matches: int
+    human_review_matches: int
+    total_reports: int
+    human_review_reports: int
+    total_decisions: int
+    override_count: int
+    override_rate: float
+    open_calibration_cases: int
+    overdue_calibration_cases: int
+    audit_log_count: int
+    governance_event_count: int
+
+
+class ResponsibleAIRedactionCategory(BaseModel):
+    category: str
+    count: int
+
+
+class ResponsibleAIHumanReviewBreakdown(BaseModel):
+    label: str
+    total: int
+    requires_review: int
+    rate: float
+
+
+class ResponsibleAIGovernanceEvent(BaseModel):
+    event_type: str
+    count: int
+
+
+class ResponsibleAICandidateSignal(BaseModel):
+    candidate_id: str
+    candidate_name: str
+    candidate_email: EmailStr
+    status: str
+    job_id: str | None = None
+    job_title: str | None = None
+    match_score: float | None = None
+    ai_recommendation: str | None = None
+    human_review_required: bool
+    override_ai_recommendation: bool
+    redaction_count: int
+    redaction_categories: list[str] = Field(default_factory=list)
+    open_calibration_case_count: int
+    reasons: list[str] = Field(default_factory=list)
+    latest_signal_at: datetime
+
+
+class ResponsibleAIControl(BaseModel):
+    name: str
+    status: str
+    evidence_count: int
+    description: str
+
+
+class ResponsibleAIDashboard(BaseModel):
+    summary: ResponsibleAISummary
+    redaction_categories: list[ResponsibleAIRedactionCategory] = Field(default_factory=list)
+    human_review_breakdown: list[ResponsibleAIHumanReviewBreakdown] = Field(default_factory=list)
+    governance_events: list[ResponsibleAIGovernanceEvent] = Field(default_factory=list)
+    recent_candidate_signals: list[ResponsibleAICandidateSignal] = Field(default_factory=list)
+    controls: list[ResponsibleAIControl] = Field(default_factory=list)
+    risk_flags: list[str] = Field(default_factory=list)
+    policy_note: str
+
+
 class EvaluationCaseResultRead(ORMModel):
     id: str
     case_key: str

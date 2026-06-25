@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user, get_primary_membership
-from app.schemas import AnalyticsOverview
+from app.schemas import AnalyticsOverview, ResponsibleAIDashboard
 from app.services.analytics import get_funnel, get_job_metrics, get_model_quality, get_overview
+from app.services.responsible_ai import build_responsible_ai_dashboard
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -34,3 +35,8 @@ def funnel(current_user=Depends(get_current_user), db: Session = Depends(get_db)
     membership = get_primary_membership(current_user, db)
     return get_funnel(db, membership.company_id)
 
+
+@router.get("/responsible-ai", response_model=ResponsibleAIDashboard)
+def responsible_ai(current_user=Depends(get_current_user), db: Session = Depends(get_db)) -> ResponsibleAIDashboard:
+    membership = get_primary_membership(current_user, db)
+    return ResponsibleAIDashboard(**build_responsible_ai_dashboard(db, membership.company_id))
