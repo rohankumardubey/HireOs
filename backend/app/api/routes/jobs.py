@@ -18,13 +18,16 @@ from app.schemas import (
     RankingSimulationConfigRead,
     RankingSimulationRequest,
     RankingSimulationResponse,
+    ShortlistBriefResponse,
 )
 from app.services.events import EventPublisher, log_audit
 from app.services.scoring import HiringIntelligenceService
+from app.services.shortlist_brief import ShortlistBriefService
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 events = EventPublisher()
 ai = HiringIntelligenceService()
+shortlist_brief = ShortlistBriefService()
 
 
 @dataclass
@@ -284,6 +287,20 @@ def job_candidates(job_id: str, current_user=Depends(get_current_user), db: Sess
 def job_ranking(job_id: str, current_user=Depends(get_current_user), db: Session = Depends(get_db)) -> list[RankingEntry]:
     snapshots = fetch_ranking_snapshots(db, job_id)
     return build_ranking_entries(snapshots)
+
+
+@router.get("/{job_id}/shortlist-brief", response_model=ShortlistBriefResponse)
+def job_shortlist_brief(
+    job_id: str,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ShortlistBriefResponse:
+    membership = get_primary_membership(current_user, db)
+    try:
+        result = shortlist_brief.build(db, company_id=membership.company_id, job_id=job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return ShortlistBriefResponse(**result)
 
 
 @router.post("/{job_id}/ranking/simulate", response_model=RankingSimulationResponse)

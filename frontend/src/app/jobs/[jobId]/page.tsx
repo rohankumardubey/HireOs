@@ -42,13 +42,21 @@ export default function JobDetailPage() {
       title={job.data?.title || "Job detail"}
       subtitle="Review structured JD analysis, see matched candidates, and monitor how AI ranking aligns with recruiter review."
       actions={
-        <button
-          type="button"
-          onClick={() => parseMutation.mutate()}
-          className="rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white"
-        >
-          Re-parse JD
-        </button>
+        <>
+          <Link
+            href={`/jobs/${jobId}/shortlist`}
+            className="rounded-full border border-border bg-white/80 px-5 py-3 text-sm font-semibold text-text transition hover:border-brand hover:text-brand"
+          >
+            Shortlist brief
+          </Link>
+          <button
+            type="button"
+            onClick={() => parseMutation.mutate()}
+            className="rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white"
+          >
+            Re-parse JD
+          </button>
+        </>
       }
     >
       <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">

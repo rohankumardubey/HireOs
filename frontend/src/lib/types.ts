@@ -435,3 +435,50 @@ export interface ResponsibleAIDashboard {
   risk_flags: string[];
   policy_note: string;
 }
+
+export interface ShortlistBriefSummary {
+  total_matched_candidates: number;
+  recommended_shortlist_count: number;
+  human_review_required_count: number;
+  advanced_decision_count: number;
+  average_final_score: number;
+  top_candidate_id?: string | null;
+}
+
+export interface ShortlistBriefCandidate {
+  rank: number;
+  candidate_id: string;
+  candidate_name: string;
+  candidate_email: string;
+  status: string;
+  current_role?: string | null;
+  years_experience: number;
+  resume_match_score: number;
+  interview_score: number;
+  final_score: number;
+  must_have_coverage: number;
+  confidence_score: number;
+  ai_recommendation: string;
+  recruiter_decision?: string | null;
+  human_review_required: boolean;
+  interview_status: string;
+  matched_required_skills: string[];
+  missing_required_skills: string[];
+  strengths: string[];
+  risks: string[];
+  evidence_summary: string;
+  suggested_next_step: string;
+  report_excerpt: string;
+}
+
+export interface ShortlistBrief {
+  job_id: string;
+  job_title: string;
+  generated_at: string;
+  summary: ShortlistBriefSummary;
+  hiring_manager_summary: string;
+  candidates: ShortlistBriefCandidate[];
+  discussion_questions: string[];
+  risk_flags: string[];
+  policy_note: string;
+}

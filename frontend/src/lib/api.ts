@@ -17,6 +17,7 @@ import type {
   MatchResult,
   Report,
   ResponsibleAIDashboard,
+  ShortlistBrief,
   User,
 } from "@/lib/types";
 
@@ -117,6 +118,8 @@ export const api = {
       ai_recommendation: string;
       recruiter_decision?: string | null;
     }>>(`/jobs/${jobId}/ranking`, { token }),
+  getShortlistBrief: (token: string, jobId: string) =>
+    request<ShortlistBrief>(`/jobs/${jobId}/shortlist-brief`, { token }),
   simulateJobRanking: (
     token: string,
     jobId: string,

@@ -22,6 +22,7 @@ Base path: `/api/v1`
 - `POST /jobs/{job_id}/parse`
 - `GET /jobs/{job_id}/candidates`
 - `GET /jobs/{job_id}/ranking`
+- `GET /jobs/{job_id}/shortlist-brief`
 
 ## Candidates
 

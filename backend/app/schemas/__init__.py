@@ -586,6 +586,53 @@ class RankingSimulationResponse(BaseModel):
     policy_note: str
 
 
+class ShortlistBriefSummary(BaseModel):
+    total_matched_candidates: int
+    recommended_shortlist_count: int
+    human_review_required_count: int
+    advanced_decision_count: int
+    average_final_score: float
+    top_candidate_id: str | None = None
+
+
+class ShortlistBriefCandidate(BaseModel):
+    rank: int
+    candidate_id: str
+    candidate_name: str
+    candidate_email: EmailStr
+    status: str
+    current_role: str | None = None
+    years_experience: float
+    resume_match_score: float
+    interview_score: float
+    final_score: float
+    must_have_coverage: float
+    confidence_score: float
+    ai_recommendation: str
+    recruiter_decision: str | None = None
+    human_review_required: bool
+    interview_status: str
+    matched_required_skills: list[str] = Field(default_factory=list)
+    missing_required_skills: list[str] = Field(default_factory=list)
+    strengths: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+    evidence_summary: str
+    suggested_next_step: str
+    report_excerpt: str
+
+
+class ShortlistBriefResponse(BaseModel):
+    job_id: str
+    job_title: str
+    generated_at: datetime
+    summary: ShortlistBriefSummary
+    hiring_manager_summary: str
+    candidates: list[ShortlistBriefCandidate] = Field(default_factory=list)
+    discussion_questions: list[str] = Field(default_factory=list)
+    risk_flags: list[str] = Field(default_factory=list)
+    policy_note: str
+
+
 class AnalyticsOverview(BaseModel):
     total_candidates: int
     active_jobs: int
