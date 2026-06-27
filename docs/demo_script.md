@@ -12,12 +12,12 @@
 8. Submit a few answers and complete the interview
 9. Open Reports and show the generated recruiter report
 10. Open Ranking and compare candidates for the same role
-11. Open Analytics and show funnel plus model-quality views
-12. Open Admin and talk through usage, governance, and platform extensibility
+11. Open the job's Shortlist Brief and show the hiring-manager-ready evidence packet
+12. Open Analytics and show funnel plus model-quality views
+13. Open Admin and talk through usage, governance, and platform extensibility
 
 ## Narration tips
 
 - Emphasize that AI recommendations are not final decisions.
 - Point out matched skills, missing skills, confidence, and human review requirements.
 - Highlight that Kafka, lakehouse, and Flink are scaffolded without blocking the MVP demo.
-
